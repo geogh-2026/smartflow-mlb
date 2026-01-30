@@ -1,0 +1,36 @@
+INFO:app:Database tables created successfully
+INFO:app:Extensions initialized successfully
+INFO:app.utils.multi_model_ocr_service:🤖 Modelos disponibles: ['gpt-4o-vision', 'gpt-4o-mini', 'gpt-4-1', 'o4-mini', 'gemini-vision']
+✅ Variables de entorno cargadas desde: /Users/enriquepabon/Library/CloudStorage/GoogleDrive-epabon@oleoflores.com/My Drive/Proyectos automatizaciones/Proyecto automatización registro MLB/oleoflores-smart-flow/.env
+⚠️ ADVERTENCIA: Usando SECRET_KEY temporal. Configure FLASK_SECRET_KEY en .env
+⚠️  FLASK_SECRET_KEY no definida, usando clave temporal
+   Para producción, define esta variable en tu archivo .env
+🔄 Creando aplicación Flask...
+============================================================
+🌱 Oleoflores Smart Flow
+   Sistema de Gestión Inteligente de Procesos Agrícolas
+============================================================
+🚀 Servidor iniciando...
+🌐 URL: http://127.0.0.1:5001
+🔧 Modo: Desarrollo (Debug)
+📊 Configuración: Config
+🗄️  Base de datos: sqlite:////Users/enriquepabon/Library/CloudStorage/GoogleDrive-epabon@oleoflores.com/My Drive/Proyectos automatizaciones/Proyecto automatización registro MLB/oleoflores-smart-flow/instance/oleoflores_dev.db
+🤖 APIs configuradas: OpenAI, Roboflow
+============================================================
+📋 Endpoints principales:
+   /                    - Dashboard principal
+   /entrada             - Registro de entrada
+   /pesaje              - Sistema de pesaje
+   /clasificacion       - Clasificación automática
+   /graneles            - Sistema de graneles
+   /admin               - Panel de administración
+============================================================
+🐛 Modo Debug ACTIVADO
+   - Auto-reload en cambios de código
+   - Debugger interactivo en errores
+   - Información detallada de errores
+============================================================
+ * Serving Flask app 'app'
+ * Debug mode: on
+Address already in use
+Port 5001 is in use by another program. Either identify and stop that program, or start the server with a different port.

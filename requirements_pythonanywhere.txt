@@ -1,0 +1,132 @@
+# ============================================================================
+# Oleoflores Smart Flow - Requirements for PythonAnywhere Production
+# ============================================================================
+# 
+# Este archivo contiene las dependencias específicas para desplegar
+# en PythonAnywhere con versiones probadas y estables.
+#
+
+# Core Flask Framework
+Flask==2.3.3
+Flask-Session==0.8.0
+Flask-Login==0.6.3
+Werkzeug==2.3.7
+
+# Database
+SQLAlchemy==2.0.23
+Flask-SQLAlchemy==3.1.1
+
+# Image Processing & OCR (Optimizado para PythonAnywhere)
+Pillow==10.0.1
+opencv-python-headless==4.8.1.78  # Versión headless para servidores
+easyocr==1.7.0
+
+# AI & LangChain (Versiones estables)
+langchain==0.2.16
+langchain-openai==0.1.25
+openai==1.51.0
+langchain-community==0.2.16
+
+# HTTP Requests & APIs  
+requests==2.31.0
+urllib3==2.0.7
+
+# Google APIs (para Google Sheets si se usa)
+google-auth==2.23.4
+google-auth-oauthlib==1.1.0
+google-auth-httplib2==0.1.1
+google-api-python-client==2.108.0
+
+# Data Processing (Versiones estables)
+pandas==2.0.3
+numpy==1.24.4
+openpyxl==3.1.2
+
+# PDF Generation
+reportlab==4.0.6
+weasyprint==60.1
+xhtml2pdf==0.2.11
+
+# QR Code Generation
+qrcode[pil]==7.4.2
+
+# Date & Time
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Environment Variables
+python-dotenv==1.0.0
+
+# Validation & Forms
+WTForms==3.1.0
+Flask-WTF==1.2.1
+email-validator==2.1.0
+
+# Security  
+cryptography==41.0.7
+
+# Logging
+colorlog==6.7.0
+
+# Production Server (PythonAnywhere usa uWSGI, pero incluimos gunicorn por compatibilidad)
+gunicorn==21.2.0
+
+# ============================================================================
+# Dependencias del sistema requeridas en PythonAnywhere
+# ============================================================================
+
+# Los siguientes paquetes del sistema deben estar disponibles:
+# - tesseract-ocr (para OCR alternativo)
+# - libgl1-mesa-glx (para OpenCV)
+# - libglib2.0-0 (para EasyOCR)
+
+# ============================================================================
+# Comandos de instalación para PythonAnywhere
+# ============================================================================
+
+# 1. En una consola Bash de PythonAnywhere:
+#    mkvirtualenv --python=/usr/bin/python3.10 oleoflores-venv
+#
+# 2. Activar el entorno virtual:
+#    workon oleoflores-venv
+#
+# 3. Instalar dependencias:
+#    pip install -r requirements_pythonanywhere.txt
+#
+# 4. Si hay errores con OpenCV, usar:
+#    pip install opencv-python-headless --no-cache-dir
+#
+# 5. Para EasyOCR, si hay problemas con torch:
+#    pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# ============================================================================
+# Variables de entorno requeridas (configurar en .env)
+# ============================================================================
+
+# FLASK_SECRET_KEY=tu-clave-secreta-aqui
+# OPENAI_API_KEY=sk-tu-clave-openai-aqui  
+# ROBOFLOW_API_KEY=tu-clave-roboflow-aqui
+# FLASK_ENV=production
+
+# ============================================================================
+# Configuración específica de PythonAnywhere
+# ============================================================================
+
+# En la pestaña Web de PythonAnywhere:
+# 1. Source code: /home/tuusuario/oleoflores-smart-flow
+# 2. Working directory: /home/tuusuario/oleoflores-smart-flow  
+# 3. WSGI file: /home/tuusuario/oleoflores-smart-flow/wsgi.py
+# 4. Virtualenv: /home/tuusuario/.virtualenvs/oleoflores-venv
+# 5. Static files:
+#    URL: /static/
+#    Directory: /home/tuusuario/oleoflores-smart-flow/app/static/
+
+# ============================================================================
+# Notas importantes para optimización en PythonAnywhere
+# ============================================================================
+
+# 1. Usar opencv-python-headless en lugar de opencv-python
+# 2. Configurar OCR_GPU=false en las variables de entorno
+# 3. Usar cache simple en lugar de Redis (plan básico)
+# 4. Configurar logs con rotación para no llenar el disco
+# 5. Optimizar el tamaño de archivos subidos según el plan 

@@ -1,0 +1,42 @@
+======================================================================
+REPORTE DE RECUPERACIÓN DE IMÁGENES DE PRODUCCIÓN
+======================================================================
+Fecha: 2025-07-26 18:36:41
+
+RESUMEN:
+- Imágenes encontradas: 4
+- Imágenes procesadas: 4
+- Imágenes asociadas: 4
+- Registros BD actualizados: 4
+- Tasa de éxito: 100.0%
+
+ASOCIACIONES DETALLADAS:
+--------------------------------------------------
+Código: 0150294A_20250725182628
+Original: 0150294A_20250725182628_2025-07-25_23-33-58.png
+Nueva ruta: fotos_pesaje_neto/0150294A_20250725182628_pesaje_neto_20250726_183605.png
+Tipo: pesaje_neto
+Tamaño: 258,182 bytes
+Modificado: 2025-07-26 18:36:05.135237
+--------------------------------------------------
+Código: 0105007A_20250711080143
+Original: 0105007A_20250711080143_2025-07-11_19-53-51.png
+Nueva ruta: fotos_pesaje_neto/0105007A_20250711080143_pesaje_neto_20250726_183605.png
+Tipo: pesaje_neto
+Tamaño: 258,182 bytes
+Modificado: 2025-07-26 18:36:05.133006
+--------------------------------------------------
+Código: 0150294A_20250711155400
+Original: 0150294A_20250711155400_2025-07-11_20-59-10.png
+Nueva ruta: fotos_pesaje_neto/0150294A_20250711155400_pesaje_neto_20250726_183605.png
+Tipo: pesaje_neto
+Tamaño: 258,182 bytes
+Modificado: 2025-07-26 18:36:05.134130
+--------------------------------------------------
+Código: 0150076A_20250502_173534
+Original: tiquete_bascula_0150076A.png
+Nueva ruta: fotos_pesaje_neto/0150076A_20250502_173534_pesaje_neto_20250726_183605.png
+Tipo: pesaje_neto
+Tamaño: 258,182 bytes
+Modificado: 2025-07-26 18:36:05.136408
+--------------------------------------------------

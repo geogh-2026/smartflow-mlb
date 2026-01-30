@@ -1,0 +1,44 @@
+{
+  "summary": {
+    "timestamp": "20250726_183641",
+    "images_found": 4,
+    "images_processed": 4,
+    "images_associated": 4,
+    "db_updates": 4,
+    "success_rate": 100.0
+  },
+  "associations": [
+    {
+      "codigo_guia": "0150294A_20250725182628",
+      "original_filename": "0150294A_20250725182628_2025-07-25_23-33-58.png",
+      "new_image_path": "fotos_pesaje_neto/0150294A_20250725182628_pesaje_neto_20250726_183605.png",
+      "image_type": "pesaje_neto",
+      "size_bytes": 258182,
+      "modified_date": "2025-07-26T18:36:05.135237"
+    },
+    {
+      "codigo_guia": "0105007A_20250711080143",
+      "original_filename": "0105007A_20250711080143_2025-07-11_19-53-51.png",
+      "new_image_path": "fotos_pesaje_neto/0105007A_20250711080143_pesaje_neto_20250726_183605.png",
+      "image_type": "pesaje_neto",
+      "size_bytes": 258182,
+      "modified_date": "2025-07-26T18:36:05.133006"
+    },
+    {
+      "codigo_guia": "0150294A_20250711155400",
+      "original_filename": "0150294A_20250711155400_2025-07-11_20-59-10.png",
+      "new_image_path": "fotos_pesaje_neto/0150294A_20250711155400_pesaje_neto_20250726_183605.png",
+      "image_type": "pesaje_neto",
+      "size_bytes": 258182,
+      "modified_date": "2025-07-26T18:36:05.134130"
+    },
+    {
+      "codigo_guia": "0150076A_20250502_173534",
+      "original_filename": "tiquete_bascula_0150076A.png",
+      "new_image_path": "fotos_pesaje_neto/0150076A_20250502_173534_pesaje_neto_20250726_183605.png",
+      "image_type": "pesaje_neto",
+      "size_bytes": 258182,
+      "modified_date": "2025-07-26T18:36:05.136408"
+    }
+  ]
+}

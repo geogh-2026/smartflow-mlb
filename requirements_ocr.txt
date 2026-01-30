@@ -1,0 +1,27 @@
+# Dependencias para OCR local con LangChain
+# ===================================
+
+# LangChain - Framework para aplicaciones con LLMs
+langchain>=0.1.0
+langchain-openai>=0.0.5
+
+# OCR Libraries - Al menos una es requerida
+easyocr>=1.7.0          # Recomendado: Fácil de usar, buena precisión
+pytesseract>=0.3.10     # Alternativa: Requiere instalación de Tesseract
+
+# Procesamiento de imágenes
+Pillow>=9.0.0
+opencv-python>=4.8.0
+
+# LLM Providers - Al menos uno es requerido
+openai>=1.0.0           # Para GPT models (recomendado)
+# anthropic>=0.7.0      # Para Claude models (alternativa)
+# ollama>=0.1.0         # Para modelos locales (alternativa)
+
+# Utilidades adicionales
+requests>=2.28.0
+python-dotenv>=1.0.0
+
+# Opcional: Para mejor calidad de OCR
+# opencv-contrib-python>=4.8.0
+# numpy>=1.24.0 

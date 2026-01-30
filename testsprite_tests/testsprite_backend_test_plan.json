@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "verify_ocr_ticket_entry_registration",
+    "description": "Test the OCR functionality for ticket entry registration to ensure accurate extraction of data from tickets and correct creation of entry records."
+  },
+  {
+    "id": "TC002",
+    "title": "validate_vehicle_gross_weighing_process",
+    "description": "Verify the gross weighing process of vehicles, ensuring correct weight capture, storage, and association with the corresponding entry record."
+  },
+  {
+    "id": "TC003",
+    "title": "test_automatic_and_manual_product_classification",
+    "description": "Test both automatic and manual product classification workflows to ensure products are correctly classified and stored in the system."
+  },
+  {
+    "id": "TC004",
+    "title": "verify_net_weighing_and_tare_calculation",
+    "description": "Validate the net weighing process including tare weight calculation to ensure accurate net weight determination and recording."
+  },
+  {
+    "id": "TC005",
+    "title": "test_exit_registration_and_document_generation",
+    "description": "Test the exit registration process including generation of exit documentation, PDF reports, and QR code support."
+  },
+  {
+    "id": "TC006",
+    "title": "validate_security_seal_submodule_lifecycle",
+    "description": "Verify the full lifecycle of the security seal submodule including inventory management, issuance requests, dispatch, installation with photographic AI validation, and final validation."
+  },
+  {
+    "id": "TC007",
+    "title": "test_role_based_access_control_enforcement",
+    "description": "Ensure that the RBAC system correctly enforces permissions across all modules, restricting access based on user roles."
+  },
+  {
+    "id": "TC008",
+    "title": "verify_real_time_dashboard_metrics_and_notifications",
+    "description": "Test the real-time dashboard for accurate metrics display and multi-channel notification system functionality."
+  },
+  {
+    "id": "TC009",
+    "title": "validate_langchain_workflow_migration_and_webhook_support",
+    "description": "Verify that all legacy n8n workflows have been successfully migrated to LangChain chains with backward-compatible webhook support."
+  },
+  {
+    "id": "TC010",
+    "title": "test_google_sheets_integration_and_data_sync",
+    "description": "Test the integration with Google Sheets to ensure data synchronization and correct handling of spreadsheet operations."
+  }
+]

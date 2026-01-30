@@ -1,0 +1,189 @@
+{
+  "meta": {
+    "project": "Oleoflores Smart Flow",
+    "date": "2025-08-25",
+    "prepared_by": "Software Development Manager"
+  },
+  "product_overview": "Oleoflores Smart Flow is a modern, refactored agricultural process management system evolved from TiquetesApp, consolidating legacy workflows into a scalable, modular Flask-based platform with advanced AI integrations for document OCR, product classification, and process automation.",
+  "core_goals": [
+    "Consolidate and unify the template structure to eliminate duplication and improve maintainability.",
+    "Modernize the architecture with reusable components, standardized layouts, and effective modularization.",
+    "Migrate and replace all legacy n8n workflows with LangChain-based implementations for OCR, vehicle plate recognition, and product classification.",
+    "Enhance user experience with a consistent, modern UI ensuring equal or better performance and full feature parity.",
+    "Implement a robust and auditable submodule for security seal management within the Graneles module to eliminate manual processes and improve traceability.",
+    "Establish a scalable foundation enabling easy addition of future features without structural disorganization."
+  ],
+  "key_features": [
+    "Blueprint-based modular Flask architecture with clearly separated concerns.",
+    "Consolidated and well-organized Jinja2 templates with reusable macros for forms, tables, cards, modals, navigation, and layouts.",
+    "Full migration from n8n workflows to LangChain chains, supporting OCR of tickets, vehicle plates, and automated product classification.",
+    "Comprehensive security seal submodule with roles and permissions, inventory management, issuance requests, photographic validation via AI-powered OCR, and full lifecycle tracking.",
+    "Real-time dashboards with metrics, notification systems, and Google Sheets integration.",
+    "Preservation and enhancement of existing workflows: entry records, gross and net weighing, classification, and exit documentation, including PDF generation and QR code support.",
+    "Role-Based Access Control (RBAC) system and multi-channel notifications integrated throughout the platform."
+  ],
+  "user_flow_summary": [
+    "Developers use a unified template directory and component macros to build and maintain the system, leveraging clear documentation and modular blueprints.",
+    "Operators record agricultural product entry via OCR-enabled tickets, proceed with gross weighing, product classification (automatic/manual), net weighing with tare calculation, and finalize with exit registration.",
+    "Security seal workflows execute a lifecycle from inventory reception to requests by inspectors, dispatch by laboratory assistants, installation with photographic evidence and AI validation, and final validation at the gate by mobile guards.",
+    "Roles such as Auxiliary Lab, Inspectors, Guards, Quality Chiefs, and Auditors interact with corresponding views for managing seals, requests, and inventory with defined access rights.",
+    "Administrators monitor system health, user role management, audit logs, and perform deployment and maintenance operations using a streamlined process."
+  ],
+  "validation_criteria": [
+    "Templates consolidated exclusively under app/templates/ with no duplicates on root level.",
+    "At least 40% reduction in duplicated frontend code due to reusable macros and layouts.",
+    "Complete migration of all n8n workflows to LangChain chains with backward-compatible webhook support during transition.",
+    "100% parity with existing feature set verified via functional regression tests and 80% test coverage in unit and integration tests.",
+    "Successful validation of the security seal submodule per MVP requirements: full lifecycle tracking, photographic AI validation, role segregation, and exception handling.",
+    "Performance benchmarks showing equal or improved page load times compared to the legacy system.",
+    "Automated tests and manual acceptance tests confirm data migration integrity with zero loss or corruption.",
+    "User satisfaction scores demonstrating improved UI consistency and usability over the previous version.",
+    "Audit logs showing all critical actions captured with RBAC enforced uniformly across all modules.",
+    "Deployment and rollback procedures tested and documented ensuring reliable production release."
+  ],
+  "code_summary": {
+    "project_name": "Oleoflores Smart Flow",
+    "description": "Sistema de Gestión Inteligente de Procesos Agrícolas - Refactorización moderna de TiquetesApp",
+    "tech_stack": {
+      "backend": {
+        "framework": "Flask 2.3.3",
+        "language": "Python 3.x",
+        "database": "SQLite",
+        "orm": "SQLAlchemy 2.0.23",
+        "authentication": "Flask-Login 0.6.3",
+        "session_management": "Flask-Session 0.8.0"
+      },
+      "frontend": {
+        "template_engine": "Jinja2",
+        "css_framework": "Bootstrap 5",
+        "icons": "Font Awesome",
+        "javascript": "Vanilla JS + jQuery",
+        "charts": "Chart.js"
+      },
+      "ai_integration": {
+        "framework": "LangChain 0.3.7",
+        "llm_provider": "OpenAI 1.57.0",
+        "ocr_engines": [
+          "EasyOCR 1.7.1",
+          "Tesseract 0.3.13"
+        ],
+        "image_processing": "OpenCV 4.10.0.84, Pillow 10.4.0"
+      },
+      "external_apis": {
+        "google_apis": "Google Sheets integration",
+        "roboflow": "Computer vision models",
+        "openai": "GPT models for text processing"
+      }
+    },
+    "architecture": {
+      "pattern": "Blueprint-based modular architecture",
+      "structure": "Factory pattern with app creation",
+      "blueprints": [
+        "entrada",
+        "pesaje",
+        "clasificacion",
+        "graneles",
+        "pesaje_neto",
+        "salida",
+        "admin",
+        "api",
+        "auth",
+        "misc",
+        "utils",
+        "sellos",
+        "certificados",
+        "remisiones",
+        "codigos_despacho",
+        "facturas"
+      ]
+    },
+    "main_features": {
+      "core_workflow": [
+        "Registro de entrada con OCR de tiquetes",
+        "Pesaje bruto de vehículos",
+        "Clasificación automática/manual de productos",
+        "Pesaje neto y cálculo de tara",
+        "Registro de salida y documentación"
+      ],
+      "ai_features": [
+        "OCR automático de documentos (tiquetes, placas, facturas)",
+        "Clasificación inteligente de productos agrícolas",
+        "Procesamiento de imágenes con computer vision",
+        "Análisis de texto con LangChain"
+      ],
+      "management_features": [
+        "Sistema RBAC (Role-Based Access Control)",
+        "Dashboard con métricas en tiempo real",
+        "Gestión de inventario de sellos",
+        "Sistema de notificaciones multi-canal",
+        "Integración con Google Sheets",
+        "Generación de reportes PDF"
+      ],
+      "specialized_modules": [
+        "Sistema de graneles independiente",
+        "Módulo de sellos con workflow completo",
+        "Procesamiento de certificados de análisis",
+        "Gestión de códigos de despacho",
+        "Procesamiento de remisiones y facturas"
+      ]
+    },
+    "database_schema": {
+      "main_tables": [
+        "entry_records",
+        "users",
+        "pesaje_records",
+        "clasificacion_records",
+        "salida_records"
+      ],
+      "sellos_tables": [
+        "sellos_inventario",
+        "sellos_solicitudes",
+        "sellos_despachos",
+        "sellos_instalaciones"
+      ],
+      "rbac_tables": [
+        "roles_sellos",
+        "permisos_sellos",
+        "usuario_rol_sello",
+        "rol_permiso_sello"
+      ]
+    },
+    "file_structure": {
+      "app_directory": "app/",
+      "blueprints": "app/blueprints/",
+      "templates": "app/templates/",
+      "static_files": "app/static/",
+      "models": "app/models/",
+      "services": "app/services/",
+      "utils": "app/utils/",
+      "config": "config/",
+      "migrations": "migrations/",
+      "tests": "tests/",
+      "docs": "docs/"
+    },
+    "testing": {
+      "framework": "pytest 7.4.3",
+      "coverage": "pytest-cov 4.1.0",
+      "flask_testing": "pytest-flask 1.3.0",
+      "test_structure": "tests/ directory with unit and integration tests"
+    },
+    "deployment": {
+      "development": "Flask development server",
+      "production": "Gunicorn 21.2.0",
+      "database": "SQLite for development, configurable for production",
+      "environment": "Environment variables via python-dotenv"
+    },
+    "key_dependencies": [
+      "Flask==2.3.3",
+      "SQLAlchemy==2.0.23",
+      "langchain==0.3.7",
+      "openai==1.57.0",
+      "opencv-python==4.10.0.84",
+      "easyocr==1.7.1",
+      "pandas==2.1.4",
+      "requests==2.31.0"
+    ],
+    "current_status": "Fully functional system - migrated from TiquetesApp",
+    "migration_notes": "Complete migration from n8n workflows to LangChain, consolidated template structure, modern Flask architecture implemented"
+  }
+}

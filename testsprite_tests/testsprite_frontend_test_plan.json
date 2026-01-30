@@ -1,0 +1,459 @@
+[
+  {
+    "id": "TC001",
+    "title": "Template Consolidation Verification",
+    "description": "Verify that all templates are consolidated exclusively under app/templates/ with no duplicates on the root level.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Scan the project directory to identify template files outside app/templates/."
+      },
+      {
+        "type": "assertion",
+        "description": "Assert no template files are found outside app/templates/ directory."
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "Frontend Code Duplication Reduction",
+    "description": "Verify at least 40% reduction in duplicated frontend code due to reusable macros and layouts.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Collect baseline frontend code duplication metrics from legacy system."
+      },
+      {
+        "type": "action",
+        "description": "Analyze current frontend codebase for code duplication percentage."
+      },
+      {
+        "type": "assertion",
+        "description": "Assert that code duplication in current system is reduced by at least 40% compared to baseline."
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "LangChain Workflow Migration",
+    "description": "Ensure complete migration of all legacy n8n workflows to LangChain chains with backward-compatible webhook support during transition.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Trigger workflows for OCR, vehicle plate recognition, and product classification using both LangChain and legacy n8n webhooks."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify OCR outputs from LangChain chains match expected results and legacy workflow results."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify vehicle plate recognition and product classification via LangChain chains are working correctly and consistent with legacy behavior."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify legacy webhook calls gracefully fallback to LangChain chain processing during transition."
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "Entry Record OCR Processing",
+    "description": "Validate that the system correctly performs OCR on agricultural product entry tickets and records extracted data accurately.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Upload various sample entry tickets with clear, low-quality, and partially obscured text."
+      },
+      {
+        "type": "assertion",
+        "description": "Check extracted text accuracy for each image, ensuring critical data fields are captured."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the system stores OCR data correctly in entry_records table."
+      },
+      {
+        "type": "assertion",
+        "description": "Validate error handling for unreadable or invalid ticket images triggers appropriate user notifications."
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Gross Weighing Accurate Data Capture",
+    "description": "Verify gross vehicle weighing workflow captures data accurately and updates pesaje_records correctly.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Input valid weight measurements for vehicle gross weighing."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify weight data is stored accurately and linked with corresponding entry record."
+      },
+      {
+        "type": "action",
+        "description": "Input edge cases such as zero weight, negative value, or non-numeric input."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify system rejects invalid weights and displays clear validation errors."
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Product Classification Workflow",
+    "description": "Test automatic and manual classification of agricultural products including fallback and error handling.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Perform automatic classification using LangChain for valid product images."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify classification results match expected categories and are stored in clasificacion_records."
+      },
+      {
+        "type": "action",
+        "description": "Perform manual product classification via UI interface."
+      },
+      {
+        "type": "assertion",
+        "description": "Validate manual classification updates records correctly."
+      },
+      {
+        "type": "action",
+        "description": "Simulate ambiguous product images or classification failures."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify system handles failures gracefully with user feedback and allows manual override."
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Net Weighing and Tara Calculation",
+    "description": "Ensure net weighing and automatic tare weight calculation functions correctly with diverse input scenarios.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Input gross weight and tare weight numbers."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify net weight is calculated accurately as gross weight minus tare weight."
+      },
+      {
+        "type": "action",
+        "description": "Input edge cases including zero tare, gross less than tare, and invalid inputs."
+      },
+      {
+        "type": "assertion",
+        "description": "Check system prevents invalid net weight calculation and displays appropriate error messages."
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Exit Registration and Document Generation",
+    "description": "Confirm the exit registration process completes successfully and generates PDF documentation with QR codes.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Complete a full exit registration workflow with valid data."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify exit record is stored in salida_records."
+      },
+      {
+        "type": "assertion",
+        "description": "Ensure generated PDF contains correct data, including QR codes."
+      },
+      {
+        "type": "assertion",
+        "description": "Open and verify PDF integrity and QR code readability."
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Security Seal Lifecycle Workflow",
+    "description": "Validate the complete lifecycle management of security seals including inventory reception, issuance requests, dispatch, installation, AI photographic validation, and final validation by guards.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Log in as Auxiliary Lab to register seal inventory reception."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm inventory records update correctly."
+      },
+      {
+        "type": "action",
+        "description": "Raise a seal issuance request as an Inspector."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify request is logged and permission-checked."
+      },
+      {
+        "type": "action",
+        "description": "Dispatch seal as laboratory assistant."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm dispatch updates status in seals_despachos."
+      },
+      {
+        "type": "action",
+        "description": "Install seal with photographic evidence from mobile interface."
+      },
+      {
+        "type": "assertion",
+        "description": "Run AI OCR to validate photo authenticity."
+      },
+      {
+        "type": "action",
+        "description": "Perform final validation at the gate by Mobile Guard."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm lifecycle completion and status updated correctly."
+      },
+      {
+        "type": "action",
+        "description": "Test unauthorized user attempting to access seal management."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify access is denied per RBAC rules."
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Role-Based Access Control Enforcement",
+    "description": "Verify that all modules and critical actions enforce RBAC correctly with appropriate permissions and restrictions per user role.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Log in as each defined role (Auxiliary Lab, Inspector, Guard, Quality Chief, Auditor, Administrator)."
+      },
+      {
+        "type": "action",
+        "description": "Attempt to access restricted and allowed views and actions."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm only authorized actions are accessible per role."
+      },
+      {
+        "type": "action",
+        "description": "Attempt to perform unauthorized operations via direct API calls."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify system denies unauthorized API access with proper error codes."
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Dashboard Metrics Accuracy and Refresh",
+    "description": "Verify real-time dashboards display correct metrics, refresh data automatically, and integrate Google Sheets data accurately.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Generate key workflow data such as entries, weighings, classification results."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm dashboard metrics reflect this data accurately in real time."
+      },
+      {
+        "type": "action",
+        "description": "Simulate Google Sheets data changes and trigger update."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify dashboard reflects updated Google Sheets information correctly."
+      },
+      {
+        "type": "action",
+        "description": "Check dashboard auto-refresh behavior and UI responsiveness."
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "Notification System Multi-Channel Delivery",
+    "description": "Ensure notifications triggered by system events are delivered via multiple channels according to user settings and roles.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Trigger system events such as seal request submission, approvals, or weighing completion."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify notifications are sent via email, in-app, and other configured channels."
+      },
+      {
+        "type": "action",
+        "description": "Check notification delivery for users with different roles and preferences."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm notifications honor user-specific notification settings."
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Audit Log Completeness and Integrity",
+    "description": "Verify the audit logs capture all critical actions with timestamps, user identities, and enforce RBAC uniformly.",
+    "category": "security",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Perform defined critical actions across modules as different users."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify audit logs store accurate, comprehensive records of these actions."
+      },
+      {
+        "type": "action",
+        "description": "Attempt to access or modify audit logs as unauthorized user."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm access is denied per system policies."
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "System Performance Benchmarking",
+    "description": "Compare page load times and key operation performance against legacy TiquetesApp benchmarks ensuring equal or improved metrics.",
+    "category": "performance",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Measure page load times for key pages (entry recording, weighing, classification, seal management) on legacy system."
+      },
+      {
+        "type": "action",
+        "description": "Measure same page load times on Oleoflores Smart Flow system."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify all load times are equal or faster compared to legacy baselines."
+      }
+    ]
+  },
+  {
+    "id": "TC015",
+    "title": "Data Migration Integrity Check",
+    "description": "Confirm data migrated from legacy system to Oleoflores Smart Flow preserves integrity with no loss or corruption.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Compare sample datasets from legacy system and migrated database."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no missing or corrupted records, data fields match accurately."
+      },
+      {
+        "type": "action",
+        "description": "Perform workflow tests using migrated data to ensure functional consistency."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm workflows complete successfully without data errors."
+      }
+    ]
+  },
+  {
+    "id": "TC016",
+    "title": "UI Consistency and Usability Evaluation",
+    "description": "Evaluate the UI for visual consistency, correct layout usage, accessibility, and user satisfaction against previous system.",
+    "category": "ui",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Review all major user interface components for consistent usage of standardized layouts and macros."
+      },
+      {
+        "type": "assertion",
+        "description": "Check component styles, responsive design, and alignment follow Bootstrap and design guidelines."
+      },
+      {
+        "type": "action",
+        "description": "Conduct user acceptance testing sessions gathering feedback on usability and satisfaction."
+      },
+      {
+        "type": "assertion",
+        "description": "Compare user satisfaction scores with legacy system to confirm improvements."
+      }
+    ]
+  },
+  {
+    "id": "TC017",
+    "title": "Deployment and Rollback Procedure Validation",
+    "description": "Test deployment and rollback processes to ensure reliable production releases with minimal downtime.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Perform a staged deployment to production environment using documented procedures."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify system starts correctly, all services operate normally post-deployment."
+      },
+      {
+        "type": "action",
+        "description": "Induce failure scenario requiring rollback."
+      },
+      {
+        "type": "assertion",
+        "description": "Execute rollback procedures and verify system reverts cleanly to prior stable version."
+      }
+    ]
+  }
+]

@@ -1,0 +1,58 @@
+# ============================================================================
+# Oleoflores Smart Flow - Basic Requirements (Compatible with Python 3.13)
+# ============================================================================
+
+# Core Flask Framework (latest compatible versions)
+Flask>=2.3.0
+Flask-Session>=0.8.0
+Flask-Login>=0.6.0
+Werkzeug>=2.3.0
+
+# Database
+SQLAlchemy>=2.0.0
+Flask-SQLAlchemy>=3.0.0
+
+# Basic Image Processing (pre-compiled wheels)
+Pillow>=10.0.0
+
+# HTTP Requests & APIs  
+requests>=2.31.0
+
+# Environment Variables
+python-dotenv>=1.0.0
+
+# Date & Time
+python-dateutil>=2.8.0
+pytz>=2023.0
+
+# QR Code Generation
+qrcode[pil]>=7.4.0
+
+# Basic PDF Generation
+reportlab>=4.0.0
+
+# Basic validation
+email-validator>=2.0.0
+
+# Security
+bcrypt>=4.0.0
+
+# Development Tools
+flask-debugtoolbar
+
+# ============================================================================
+# Installation Notes for Basic Setup
+# ============================================================================
+
+# 1. Create virtual environment:
+#    python -m venv venv
+#    source venv/bin/activate  # Linux/Mac
+#    venv\Scripts\activate     # Windows
+
+# 2. Install basic requirements:
+#    pip install -r requirements-basic.txt
+
+# 3. For full functionality, install additional dependencies later:
+#    pip install -r requirements.txt (after fixing compatibility issues)
+
+# ============================================================================ 

@@ -1,0 +1,1702 @@
+"""
+Módulo para las operaciones CRUD de la base de datos.
+Contiene funciones para guardar y recuperar datos de todas las tablas.
+"""
+
+import sqlite3
+import os
+import logging
+import json
+from datetime import datetime, time, timedelta
+from flask import current_app
+import pytz
+import traceback
+# Importación removida para evitar dependencias circulares
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Define timezones
+UTC = pytz.utc
+BOGOTA_TZ = pytz.timezone('America/Bogota')
+
+#-----------------------
+# Operaciones para Pesajes Bruto
+#-----------------------
+
+def store_pesaje_bruto(pesaje_data):
+    """
+    Almacena un registro de pesaje bruto en la base de datos.
+    
+    Args:
+        pesaje_data (dict): Diccionario con los datos del pesaje bruto
+        
+    Returns:
+        bool: True si se almacenó correctamente, False en caso contrario
+    """
+    logger.info(f"🔍 STORE_PESAJE_BRUTO - Datos recibidos: {pesaje_data}")
+    conn = None
+    try:
+        db_path = current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Definir columnas válidas para la tabla pesajes_bruto
+        valid_columns = {
+            'codigo_guia', 'codigo_proveedor', 'nombre_proveedor', 'peso_bruto',
+            'tipo_pesaje', 'timestamp_pesaje_utc', 'imagen_pesaje', 
+            'codigo_guia_transporte_sap', 'estado'
+        }
+        
+        # Filtrar solo las columnas válidas
+        filtered_data = {k: v for k, v in pesaje_data.items() if k in valid_columns}
+        
+        # Log de campos filtrados para debug
+        filtered_out = set(pesaje_data.keys()) - valid_columns
+        if filtered_out:
+            logger.info(f"🔍 Campos filtrados de pesajes_bruto (no existen): {filtered_out}")
+        
+        # Verificar si ya existe un registro con este código_guia
+        cursor.execute("SELECT id FROM pesajes_bruto WHERE codigo_guia = ?", 
+                      (filtered_data.get('codigo_guia'),))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Actualizar el registro existente
+            update_cols = []
+            params = []
+            
+            for key, value in filtered_data.items():
+                if key != 'codigo_guia':  # Excluir la clave primaria
+                    update_cols.append(f"{key} = ?")
+                    params.append(value)
+            
+            # Agregar el parámetro para WHERE
+            params.append(filtered_data.get('codigo_guia'))
+            
+            update_query = f"UPDATE pesajes_bruto SET {', '.join(update_cols)} WHERE codigo_guia = ?"
+            logger.info(f"🔍 UPDATE Query: {update_query}")
+            logger.info(f"🔍 UPDATE Params: {params}")
+            cursor.execute(update_query, params)
+            logger.info(f"Actualizado registro de pesaje bruto para guía: {filtered_data.get('codigo_guia')}")
+        else:
+            # Insertar nuevo registro
+            columns = ', '.join(filtered_data.keys())
+            placeholders = ', '.join(['?' for _ in filtered_data])
+            values = list(filtered_data.values())
+            
+            insert_query = f"INSERT INTO pesajes_bruto ({columns}) VALUES ({placeholders})"
+            cursor.execute(insert_query, values)
+            logger.info(f"Insertado nuevo registro de pesaje bruto para guía: {filtered_data.get('codigo_guia')}")
+        
+        conn.commit()
+        return True
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        return False
+    except sqlite3.Error as e:
+        logger.error(f"Error almacenando registro de pesaje bruto: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_pesajes_bruto(filtros=None):
+    """
+    Recupera los registros de pesajes brutos, opcionalmente filtrados.
+    Consulta tanto database.db (primario) como tiquetes.db (secundario)
+    y combina los resultados, priorizando database.db.
+    
+    Args:
+        filtros (dict, optional): Diccionario con condiciones de filtro
+                                 - codigos_guia: lista de códigos de guía para filtrar
+        
+    Returns:
+        list: Lista de registros de pesajes brutos como diccionarios
+    """
+    conn_tq = None
+    pesajes = []
+    try:
+        # Get DB paths from config
+        db_path_secondary = current_app.config['TIQUETES_DB_PATH']
+        
+        # Process the single configured DB (tiquetes.db)
+        if os.path.exists(db_path_secondary):
+            try:
+                conn_tq = sqlite3.connect(db_path_secondary)
+                conn_tq.row_factory = sqlite3.Row
+                cursor = conn_tq.cursor()
+                
+                # Similar query structure as above
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pesajes_bruto'")
+                pesajes_exists = cursor.fetchone() is not None
+                
+                # Verificar si existe tabla pesajes_neto
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pesajes_neto'")
+                pesajes_neto_exists = cursor.fetchone() is not None
+                
+                if pesajes_exists:
+                    # Build query con LEFT JOIN para incluir peso_neto
+                    if pesajes_neto_exists:
+                        query = """
+                        SELECT 
+                            pb.*, 
+                            pb.timestamp_pesaje_utc,
+                            pn.peso_neto,
+                            pn.peso_tara,
+                            pn.peso_producto,
+                            pn.timestamp_pesaje_neto_utc
+                        FROM pesajes_bruto pb
+                        LEFT JOIN pesajes_neto pn ON pb.codigo_guia = pn.codigo_guia
+                        """
+                    else:
+                        # Fallback si no existe pesajes_neto
+                        query = "SELECT *, timestamp_pesaje_utc FROM pesajes_bruto"
+                    
+                    params = []
+                    conditions = []
+                    
+                    # Aplicar filtro por códigos de guía si se proporciona
+                    if filtros and 'codigos_guia' in filtros and filtros['codigos_guia']:
+                        codigos_guia = filtros['codigos_guia']
+                        if codigos_guia:  # Solo si la lista no está vacía
+                            placeholders = ', '.join('?' * len(codigos_guia))
+                            conditions.append(f"pb.codigo_guia IN ({placeholders})")
+                            params.extend(codigos_guia)
+                    
+                    # Agregar condiciones WHERE si existen
+                    if conditions:
+                        query += " WHERE " + " AND ".join(conditions)
+                    
+                    query += " ORDER BY pb.timestamp_pesaje_utc DESC"
+                    
+                    cursor.execute(query, params)
+                    for row in cursor.fetchall():
+                        pesaje = {key: row[key] for key in row.keys()}
+                        # ... (data cleaning/enrichment logic from original code) ...
+                        codigo_guia = pesaje.get('codigo_guia')
+                        if codigo_guia:
+                            pesajes.append(pesaje)
+
+            except sqlite3.Error as e:
+                 logger.error(f"Error consultando {db_path_secondary}: {e}")
+            finally:
+                if conn_tq:
+                    conn_tq.close()
+        else:
+            logger.warning(f"Base de datos {db_path_secondary} no encontrada.")
+            
+        return pesajes
+    except Exception as e:
+        logger.error(f"Error general recuperando registros de pesajes brutos: {e}")
+        return []
+
+def get_pesaje_bruto_by_codigo_guia(codigo_guia):
+    """
+    Recupera un registro de pesaje bruto específico por su código de guía.
+    Consulta tanto database.db (primario) como tiquetes.db (secundario).
+    
+    Args:
+        codigo_guia (str): El código de guía a buscar
+        
+    Returns:
+        dict: El registro de pesaje bruto como diccionario, o None si no se encuentra
+    """
+    conn = None
+    try:
+        # Get DB paths from config
+        db_path_secondary = current_app.config['TIQUETES_DB_PATH']
+        
+        # Process the single configured DB (tiquetes.db)
+        if os.path.exists(db_path_secondary):
+            try:
+                conn = sqlite3.connect(db_path_secondary)
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                
+                # Verificar si las tablas existen
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pesajes_bruto'")
+                pesajes_exists = cursor.fetchone() is not None
+                
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='entry_records'")
+                entry_exists = cursor.fetchone() is not None
+                
+                # Query pesajes_bruto first
+                if pesajes_exists:
+                    query = "SELECT p.*, p.timestamp_pesaje_utc "
+                    
+                    # Conditionally add image_filename if entry_records exists
+                    if entry_exists:
+                         # Check if image_filename column exists in entry_records
+                         cursor.execute("PRAGMA table_info(entry_records)")
+                         entry_cols = {row[1] for row in cursor.fetchall()}
+                         if 'image_filename' in entry_cols:
+                             query += ", e.image_filename "
+                         else: 
+                             query += ", NULL as image_filename " # Add placeholder if column missing
+                         query += "FROM pesajes_bruto p LEFT JOIN entry_records e ON p.codigo_guia = e.codigo_guia WHERE p.codigo_guia = ?"
+                    else:
+                         query += ", NULL as image_filename FROM pesajes_bruto p WHERE p.codigo_guia = ?" 
+                         
+                    cursor.execute(query, (codigo_guia,))
+                    row = cursor.fetchone()
+                    
+                    if row:
+                        pesaje = dict(row)
+                        logger.info(f"Encontrado pesaje bruto para {codigo_guia} en {db_path_secondary}")
+                        # Normalize SAP code
+                        if 'codigo_guia_transporte_sap' not in pesaje or not pesaje['codigo_guia_transporte_sap']:
+                             pesaje['codigo_guia_transporte_sap'] = 'No registrada'
+                        conn.close()
+                        return pesaje
+                
+                # If not found in pesajes_bruto, check entry_records if it exists
+                if entry_exists:
+                    cursor.execute("SELECT * FROM entry_records WHERE codigo_guia = ?", (codigo_guia,))
+                    row = cursor.fetchone()
+                    
+                    if row:
+                        entry = dict(row)
+                        logger.info(f"Encontrado registro de entrada para {codigo_guia} en {db_path_secondary}")
+                        peso_basico = {
+                           # ... (mapping logic remains the same) ...
+                            'codigo_guia': codigo_guia,
+                            'codigo_proveedor': entry.get('codigo_proveedor', ''),
+                            'nombre_proveedor': entry.get('nombre_proveedor', ''),
+                            'peso_bruto': 'Pendiente',
+                            'tipo_pesaje': 'pendiente',
+                            'timestamp_registro_utc': entry.get('timestamp_registro_utc', ''),
+                            'codigo_guia_transporte_sap': entry.get('codigo_guia_transporte_sap', 'No registrada'),
+                            'estado': 'pendiente',
+                            'image_filename': entry.get('image_filename', '')
+                        }
+                        conn.close()
+                        return peso_basico
+                
+                # If not found in this DB, close connection and continue to next DB
+                conn.close()
+                conn = None # Reset conn for the next iteration or finally block
+                
+            except sqlite3.Error as e:
+                logger.error(f"Error consultando {db_path_secondary}: {e}")
+                if conn:
+                    conn.close()
+                    conn = None # Reset conn
+        
+        # If not found in any database
+        logger.warning(f"No se encontró pesaje bruto para {codigo_guia}")
+        return None
+
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        return None
+    except Exception as e:
+        logger.error(f"Error general en get_pesaje_bruto_by_codigo_guia: {e}")
+        if conn: # Close connection if open due to general error
+             conn.close()
+        return None
+
+def update_pesaje_bruto(codigo_guia, datos_pesaje):
+    """
+    Actualiza un registro de pesaje bruto existente con datos adicionales.
+    Uses TIQUETES_DB_PATH for update.
+    
+    Args:
+        codigo_guia (str): Código de guía del registro a actualizar
+        datos_pesaje (dict): Diccionario con los campos a actualizar
+        
+    Returns:
+        bool: True si se actualizó correctamente, False en caso contrario
+    """
+    conn = None
+    try:
+        db_path = current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Verificar si existe el registro
+        cursor.execute("SELECT id FROM pesajes_bruto WHERE codigo_guia = ?", 
+                      (codigo_guia,))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Construir la consulta de actualización
+            update_cols = []
+            params = []
+            
+            for key, value in datos_pesaje.items():
+                update_cols.append(f"{key} = ?")
+                params.append(value)
+            
+            # Agregar el parámetro para WHERE
+            params.append(codigo_guia)
+            
+            update_query = f"UPDATE pesajes_bruto SET {', '.join(update_cols)} WHERE codigo_guia = ?"
+            cursor.execute(update_query, params)
+            
+            conn.commit()
+            logger.info(f"Actualizado registro de pesaje bruto para guía: {codigo_guia}")
+            return True
+        else:
+            logger.warning(f"No se encontró registro de pesaje bruto para actualizar: {codigo_guia}")
+            return False
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        return False
+    except sqlite3.Error as e:
+        logger.error(f"Error actualizando registro de pesaje bruto: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+#-----------------------
+# Operaciones para Clasificaciones
+#-----------------------
+# db_operations.py
+
+
+
+def store_clasificacion(clasificacion_data, fotos=None):
+    """
+    Almacena un registro de clasificación y sus fotos asociadas en la base de datos.
+    Uses TIQUETES_DB_PATH. CON LOGGING DETALLADO.
+    """
+    conn = None
+    codigo_guia_logging = clasificacion_data.get('codigo_guia', 'UNKNOWN') # Para logs
+    try:
+        logger.info(f"--- store_clasificacion v2 INICIO para {codigo_guia_logging} ---")
+        logger.debug(f"Datos recibidos: {clasificacion_data}")
+        logger.debug(f"Fotos recibidas: {fotos}")
+
+        db_path = current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path)
+        # Asegurar que las claves foráneas estén habilitadas si usas relaciones
+        # conn.execute("PRAGMA foreign_keys = ON")
+        cursor = conn.cursor()
+
+        datos_para_sql = clasificacion_data.copy()
+        codigo_guia = datos_para_sql.get('codigo_guia')
+
+        if not codigo_guia:
+            logger.error("STORE_CLASIF: No se puede guardar sin 'codigo_guia'. Abortando.")
+            return False
+
+        # Quitar valores None ANTES de construir el SQL
+        datos_sin_none = {k: v for k, v in datos_para_sql.items() if v is not None}
+        
+        # Definir columnas válidas para la tabla clasificaciones
+        valid_columns = {
+            'codigo_guia', 'codigo_proveedor', 'nombre_proveedor', 'timestamp_clasificacion_utc',
+            'verde_manual', 'sobremaduro_manual', 'danio_corona_manual', 'pendunculo_largo_manual', 'podrido_manual',
+            'verde_automatico', 'sobremaduro_automatico', 'danio_corona_automatico', 'pendunculo_largo_automatico', 'podrido_automatico',
+            'clasificacion_manual_json', 'clasificacion_automatica_json', 'clasificacion_manual', 'clasificacion_automatica',
+            'observaciones', 'total_racimos_detectados', 'clasificacion_consolidada', 'fecha_actualizacion', 'hora_actualizacion',
+            'timestamp_fin_auto', 'tiempo_procesamiento_auto', 'estado'
+        }
+        
+        # Filtrar solo las columnas válidas
+        datos_finales = {k: v for k, v in datos_sin_none.items() if k in valid_columns}
+        
+        # Log de campos filtrados para debug
+        filtered_out = set(datos_sin_none.keys()) - valid_columns
+        if filtered_out:
+            logger.info(f"🔍 Campos filtrados de clasificaciones (no existen): {filtered_out}")
+        
+        logger.debug(f"STORE_CLASIF: Datos finales para SQL (sin None y filtrados): {datos_finales}")
+        logger.info(f"[DEBUG-ESTADO] Valor de 'estado' a guardar: {datos_finales.get('estado')}")
+
+        # Check if record exists
+        cursor.execute("SELECT id FROM clasificaciones WHERE codigo_guia = ?", (codigo_guia,))
+        existing = cursor.fetchone()
+        logger.debug(f"STORE_CLASIF: Registro existente para {codigo_guia}? {'Sí' if existing else 'No'}")
+
+        if existing:
+            # UPDATE logic
+            update_fields = {k: v for k, v in datos_finales.items() if k != 'codigo_guia'}
+            if not update_fields:
+                logger.warning(f"STORE_CLASIF: No hay campos para actualizar en clasificación existente {codigo_guia}.")
+            else:
+                set_clause = ', '.join([f"{k} = ?" for k in update_fields.keys()])
+                valores = list(update_fields.values()) + [codigo_guia]
+                update_query = f"UPDATE clasificaciones SET {set_clause} WHERE codigo_guia = ?"
+                logger.info(f"STORE_CLASIF: Preparando UPDATE para {codigo_guia}.")
+                logger.info(f"[DEBUG-ESTADO] Valor de 'estado' en UPDATE: {update_fields.get('estado')}")
+                # --- INICIO: Logs detallados de UPDATE ---
+                logger.info(f"STORE_CLASIF [UPDATE SQL]: {update_query}")
+                # Loguear parámetros con cuidado, especialmente si pueden ser muy largos
+                try:
+                    # Intentar loguear como JSON para valores largos
+                    params_log = json.dumps(valores, indent=2, ensure_ascii=False, default=str)
+                    logger.info(f"STORE_CLASIF [UPDATE PARAMS]:\n{params_log}")
+                except Exception as log_err:
+                    logger.error(f"STORE_CLASIF [UPDATE PARAMS] Error al dumpear params para log: {log_err}")
+                    logger.info(f"STORE_CLASIF [UPDATE PARAMS] (raw - puede estar truncado): {valores}")
+                # --- FIN: Logs detallados de UPDATE ---
+                cursor.execute(update_query, valores)
+                logger.info(f"STORE_CLASIF: UPDATE ejecutado para {codigo_guia}.")
+        else:
+            # INSERT logic
+            if not datos_finales:
+                 logger.error("STORE_CLASIF: No hay datos disponibles para insertar. Abortando.")
+                 return False
+
+            campos = ', '.join(datos_finales.keys())
+            placeholders = ', '.join(['?' for _ in datos_finales])
+            valores = list(datos_finales.values())
+            insert_query = f"INSERT INTO clasificaciones ({campos}) VALUES ({placeholders})"
+            logger.info(f"STORE_CLASIF: Ejecutando INSERT: {insert_query}")
+            logger.info(f"[DEBUG-ESTADO] Valor de 'estado' en INSERT: {datos_finales.get('estado')}")
+            logger.debug(f"STORE_CLASIF: Valores para INSERT: {valores}")
+            cursor.execute(insert_query, valores)
+            logger.info(f"STORE_CLASIF: INSERT ejecutado para {codigo_guia}.")
+
+        # Commit después de INSERT/UPDATE de clasificación
+        conn.commit()
+        logger.info(f"[DEBUG-ESTADO] Commit realizado para {codigo_guia}. Valor de 'estado' guardado: {datos_finales.get('estado')}")
+        logger.info(f"STORE_CLASIF: Commit realizado para tabla clasificaciones ({codigo_guia}).")
+
+
+        # --- Guardar fotos si existen ---
+        if fotos:
+            logger.info(f"STORE_CLASIF: Procesando {len(fotos)} fotos para {codigo_guia}.")
+            # Borrar fotos existentes
+            logger.info(f"STORE_CLASIF: Borrando fotos existentes para {codigo_guia}...")
+            try:
+                cursor.execute("DELETE FROM fotos_clasificacion WHERE codigo_guia = ?", (codigo_guia,))
+                logger.info(f"STORE_CLASIF: Fotos antiguas borradas ok para {codigo_guia}.")
+            except sqlite3.Error as del_err:
+                 # Loguear pero continuar, podría ser que la tabla no exista o esté vacía
+                 logger.warning(f"STORE_CLASIF: Error (o tabla vacía?) borrando fotos antiguas para {codigo_guia}: {del_err}")
+
+            # Insertar fotos nuevas
+            fotos_insertadas_count = 0
+            for i, foto_path in enumerate(fotos):
+                if foto_path:
+                    logger.debug(f"STORE_CLASIF: Insertando foto {i+1}: {foto_path}")
+                    try:
+                        cursor.execute("""
+                            INSERT INTO fotos_clasificacion (codigo_guia, ruta_foto, numero_foto)
+                            VALUES (?, ?, ?)
+                        """, (codigo_guia, foto_path, i + 1))
+                        fotos_insertadas_count += 1
+                    except sqlite3.Error as insert_err:
+                         # Loguear el error específico de la foto
+                         logger.error(f"STORE_CLASIF: Error insertando foto {i+1} ({foto_path}) para {codigo_guia}: {insert_err}")
+                         # Considerar si se debe devolver False aquí si una foto falla
+                         # return False # Descomentar si el fallo al guardar UNA foto debe detener todo
+                else:
+                    logger.warning(f"STORE_CLASIF: Se omitió la foto {i+1} para {codigo_guia} (ruta vacía).")
+
+            # Commit después de insertar todas las fotos
+            conn.commit()
+            logger.info(f"STORE_CLASIF: Commit realizado para tabla fotos_clasificacion ({codigo_guia}). {fotos_insertadas_count} fotos insertadas.")
+        else:
+             logger.info(f"STORE_CLASIF: No se proporcionaron fotos para guardar ({codigo_guia}).")
+
+        logger.info(f"--- store_clasificacion v2 FIN ÉXITO para {codigo_guia_logging} ---")
+        return True
+
+    except KeyError as ke:
+        logger.error(f"STORE_CLASIF: Error de configuración (KeyError) para {codigo_guia_logging}: {ke}", exc_info=True)
+        return False
+    except sqlite3.Error as db_err:
+        # *** LOG DETALLADO DEL ERROR SQL ***
+        logger.error(f"STORE_CLASIF: Error de Base de Datos (sqlite3.Error) para {codigo_guia_logging}: {db_err}", exc_info=True)
+        # Loguear los datos que se intentaban guardar puede ser útil
+        logger.error(f"STORE_CLASIF: Datos que se intentaban guardar: {datos_finales if 'datos_finales' in locals() else 'No disponibles'}")
+        return False
+    except Exception as e:
+        logger.error(f"STORE_CLASIF: Error General (Exception) para {codigo_guia_logging}: {e}", exc_info=True)
+        return False
+    finally:
+        if conn:
+            conn.close()
+            logger.debug(f"STORE_CLASIF: Conexión a BD cerrada para {codigo_guia_logging}.")
+        else:
+            logger.debug(f"STORE_CLASIF: Conexión a BD no estaba abierta al finalizar ({codigo_guia_logging}).")
+
+# ... (resto de funciones en db_operations.py) ...
+
+def get_clasificaciones(filtros=None):
+    """
+    Recupera los registros de clasificaciones, opcionalmente filtrados.
+    Uses TIQUETES_DB_PATH.
+    
+    Args:
+        filtros (dict, optional): Diccionario con condiciones de filtro
+        
+    Returns:
+        list: Lista de registros de clasificaciones como diccionarios
+    """
+    conn = None
+    try:
+        db_path = current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        query = "SELECT * FROM clasificaciones"
+        params = []
+        
+        # Aplicar filtros si se proporcionan
+        if filtros:
+            conditions = []
+            
+            # Filtro por códigos de guía (OPTIMIZACIÓN PRINCIPAL)
+            if 'codigos_guia' in filtros and filtros['codigos_guia']:
+                codigos_guia = filtros['codigos_guia']
+                if codigos_guia:  # Solo si la lista no está vacía
+                    placeholders = ', '.join('?' * len(codigos_guia))
+                    conditions.append(f"codigo_guia IN ({placeholders})")
+                    params.extend(codigos_guia)
+            
+            if filtros.get('fecha_desde'):
+                try:
+                    fecha_desde_str = filtros['fecha_desde'] # YYYY-MM-DD
+                    # Convertir a UTC desde Bogotá
+                    naive_dt_desde = datetime.strptime(fecha_desde_str, '%Y-%m-%d')
+                    naive_dt_desde = datetime.combine(naive_dt_desde.date(), time.min)
+                    bogota_dt_desde = BOGOTA_TZ.localize(naive_dt_desde)
+                    utc_dt_desde = bogota_dt_desde.astimezone(UTC)
+                    utc_timestamp_desde = utc_dt_desde.strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    conditions.append("timestamp_clasificacion_utc >= ?")
+                    params.append(utc_timestamp_desde)
+                    logger.info(f"[Clasificaciones] Filtro fecha_desde (Bogotá: {fecha_desde_str} 00:00:00) -> UTC: {utc_timestamp_desde}")
+                except (ValueError, TypeError) as e:
+                     logger.warning(f"[Clasificaciones] Error procesando fecha_desde '{filtros.get('fecha_desde', 'N/A')}': {e}. Saltando filtro.")
+                
+            if filtros.get('fecha_hasta'):
+                try:
+                    fecha_hasta_str = filtros['fecha_hasta'] # YYYY-MM-DD
+                    # Convertir a UTC desde Bogotá
+                    naive_dt_hasta = datetime.strptime(fecha_hasta_str, '%Y-%m-%d')
+                    naive_dt_hasta = datetime.combine(naive_dt_hasta.date(), time.max.replace(microsecond=0))
+                    bogota_dt_hasta = BOGOTA_TZ.localize(naive_dt_hasta)
+                    utc_dt_hasta = bogota_dt_hasta.astimezone(UTC)
+                    utc_timestamp_hasta = utc_dt_hasta.strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    conditions.append("timestamp_clasificacion_utc <= ?")
+                    params.append(utc_timestamp_hasta)
+                    logger.info(f"[Clasificaciones] Filtro fecha_hasta (Bogotá: {fecha_hasta_str} 23:59:59) -> UTC: {utc_timestamp_hasta}")
+                except (ValueError, TypeError) as e:
+                     logger.warning(f"[Clasificaciones] Error procesando fecha_hasta '{filtros.get('fecha_hasta', 'N/A')}': {e}. Saltando filtro.")
+            
+            # Mantener los otros filtros como estaban
+            if filtros.get('codigo_proveedor'):
+                conditions.append("codigo_proveedor LIKE ?")
+                params.append(f"%{filtros['codigo_proveedor']}%")
+                
+            if filtros.get('nombre_proveedor'):
+                conditions.append("nombre_proveedor LIKE ?")
+                params.append(f"%{filtros['nombre_proveedor']}%")
+            
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+        
+        # Ordenar por timestamp UTC más reciente
+        query += " ORDER BY timestamp_clasificacion_utc DESC"
+        
+        cursor.execute(query, params)
+        
+        # Convertir filas a diccionarios
+        clasificaciones = []
+        for row in cursor.fetchall():
+            clasificacion = {key: row[key] for key in row.keys()}
+            
+            # Obtener fotos asociadas
+            # Use a separate cursor or fetch all data first to avoid issues
+            with sqlite3.connect(db_path) as foto_conn:
+                foto_cursor = foto_conn.cursor()
+                foto_cursor.execute("SELECT ruta_foto FROM fotos_clasificacion WHERE codigo_guia = ? ORDER BY numero_foto", 
+                             (clasificacion['codigo_guia'],))
+                fotos = [foto_row[0] for foto_row in foto_cursor.fetchall()]
+                clasificacion['fotos'] = fotos
+            
+            clasificaciones.append(clasificacion)
+        
+        return clasificaciones
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        return []
+    except sqlite3.Error as e:
+        logger.error(f"Error recuperando registros de clasificaciones: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def get_fotos_clasificacion(codigo_guia):
+    """
+    Recupera las fotos de clasificación para un código de guía específico.
+    Uses TIQUETES_DB_PATH.
+    
+    Args:
+        codigo_guia (str): Código de guía para buscar fotos
+        
+    Returns:
+        list: Lista de rutas de fotos ordenadas por numero_foto
+    """
+    conn = None
+    try:
+        db_path = current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT ruta_foto FROM fotos_clasificacion WHERE codigo_guia = ? ORDER BY numero_foto", 
+                     (codigo_guia,))
+        fotos_raw = cursor.fetchall()
+        fotos = [foto_row[0] for foto_row in fotos_raw]
+        
+        logger.info(f"Fotos de clasificación encontradas para {codigo_guia}: {len(fotos)} fotos")
+        return fotos
+        
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        return []
+    except sqlite3.Error as e:
+        logger.error(f"Error obteniendo fotos de clasificación para {codigo_guia}: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_clasificacion_by_codigo_guia(codigo_guia):
+    """
+    Recupera un registro de clasificación por su código de guía.
+    Uses TIQUETES_DB_PATH.
+    
+    Args:
+        codigo_guia (str): Código de guía a buscar
+        
+    Returns:
+        dict: Datos de la clasificación o None si no se encuentra
+    """
+    conn = None
+    try:
+        db_path = current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM clasificaciones WHERE codigo_guia = ?", (codigo_guia,))
+        row = cursor.fetchone()
+        
+        if row:
+            clasificacion = {key: row[key] for key in row.keys()}
+            
+            # Obtener fotos asociadas (using main connection cursor is fine here)
+            logger.info(f"[DIAG][get_clasificacion] Buscando fotos para guía: {codigo_guia}")
+            try:
+                cursor.execute("SELECT ruta_foto FROM fotos_clasificacion WHERE codigo_guia = ? ORDER BY numero_foto", 
+                             (codigo_guia,))
+                fotos_raw = cursor.fetchall() # Obtener todas las filas crudas
+                logger.info(f"[DIAG][get_clasificacion] Consulta de fotos ejecutada para {codigo_guia}. Resultado crudo: {fotos_raw}")
+                fotos = [foto_row[0] for foto_row in fotos_raw] # Extraer la ruta
+                clasificacion['fotos'] = fotos
+                logger.info(f"[DIAG][get_clasificacion] Rutas de fotos encontradas y asignadas para {codigo_guia}: {fotos}")
+            except sqlite3.Error as фото_err:
+                 logger.error(f"[DIAG][get_clasificacion] Error al consultar fotos para {codigo_guia}: {фото_err}")
+                 clasificacion['fotos'] = [] # Asignar lista vacía en caso de error
+            
+            # Si clasificaciones es una cadena JSON, convertirla a lista
+            if isinstance(clasificacion.get('clasificaciones'), str):
+                try:
+                    clasificacion['clasificaciones'] = json.loads(clasificacion['clasificaciones'])
+                except json.JSONDecodeError:
+                    clasificacion['clasificaciones'] = []
+            
+            # Si clasificacion_automatica es una cadena JSON, convertirla a diccionario
+            if isinstance(clasificacion.get('clasificacion_automatica'), str):
+                try:
+                    clasificacion['clasificacion_automatica'] = json.loads(clasificacion['clasificacion_automatica'])
+                except json.JSONDecodeError:
+                    pass
+                    
+            return clasificacion
+        return None
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Error recuperando registro de clasificación por código de guía: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+#-----------------------
+# Operaciones para Pesajes Neto
+#-----------------------
+
+def store_pesaje_neto(pesaje_data):
+    """
+    Almacena un registro de pesaje neto en la base de datos.
+    Uses TIQUETES_DB_PATH.
+    
+    Args:
+        pesaje_data (dict): Diccionario con los datos del pesaje neto
+        
+    Returns:
+        bool: True si se almacenó correctamente, False en caso contrario
+    """
+    conn = None
+    try:
+        db_path = current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Verificar si ya existe un registro con este código_guia
+        cursor.execute("SELECT id FROM pesajes_neto WHERE codigo_guia = ?", 
+                      (pesaje_data.get('codigo_guia'),))
+        existing = cursor.fetchone()
+        
+        # Preparar datos excluyendo claves None y la clave primaria para INSERT/UPDATE
+        datos_filtrados = {k: v for k, v in pesaje_data.items() if v is not None and k != 'id'}
+        # Asegurarse de incluir el timestamp UTC y excluir los viejos
+        datos_filtrados['timestamp_pesaje_neto_utc'] = datos_filtrados.pop('timestamp_pesaje_neto_utc', None) # Ensure it exists
+        datos_filtrados.pop('fecha_pesaje_neto', None) # Remove old field
+        datos_filtrados.pop('hora_pesaje_neto', None)  # Remove old field
+        
+        # Filtrar nuevamente por si el timestamp UTC era None
+        datos_finales = {k: v for k, v in datos_filtrados.items() if v is not None}
+
+        if existing:
+            # Actualizar el registro existente
+            update_cols = []
+            params = []
+            
+            for key, value in datos_finales.items():
+                if key != 'codigo_guia':  # Excluir la clave primaria
+                    update_cols.append(f"{key} = ?")
+                    params.append(value)
+            
+            # Agregar el parámetro para WHERE
+            params.append(datos_finales.get('codigo_guia'))
+            
+            update_query = f"UPDATE pesajes_neto SET {', '.join(update_cols)} WHERE codigo_guia = ?"
+            cursor.execute(update_query, params)
+            logger.info(f"Actualizado registro de pesaje neto para guía: {datos_finales.get('codigo_guia')}")
+        else:
+            # Insertar nuevo registro
+            columns = ', '.join(datos_finales.keys())
+            placeholders = ', '.join(['?' for _ in datos_finales])
+            values = list(datos_finales.values())
+            
+            insert_query = f"INSERT INTO pesajes_neto ({columns}) VALUES ({placeholders})"
+            cursor.execute(insert_query, values)
+            logger.info(f"Insertado nuevo registro de pesaje neto para guía: {datos_finales.get('codigo_guia')}")
+        
+        conn.commit()
+        return True
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        return False
+    except sqlite3.Error as e:
+        logger.error(f"Error almacenando registro de pesaje neto: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_pesajes_neto(fecha_desde_str=None, fecha_hasta_str=None, proveedor_term=None, db_path=None, filtros=None):
+    """
+    Recupera los registros de pesajes netos, opcionalmente filtrados.
+    Compatible con ambos formatos de llamada (parámetros posicionales y diccionario).
+    
+    Args:
+        fecha_desde_str (str, optional): Fecha desde en formato YYYY-MM-DD (compatibilidad)
+        fecha_hasta_str (str, optional): Fecha hasta en formato YYYY-MM-DD (compatibilidad)
+        proveedor_term (str, optional): Término de búsqueda para proveedor (compatibilidad)
+        db_path (str, optional): Ruta de la base de datos (compatibilidad)
+        filtros (dict, optional): Diccionario con condiciones de filtro (nuevo formato)
+        
+    Returns:
+        list or tuple: Lista de registros de pesajes netos como diccionarios, 
+                      o tupla (lista_final, totales) para compatibilidad
+    """
+    # Determinar si es llamada legacy (blueprint pesaje_neto) o nueva (blueprint pesaje)
+    # La llamada legacy siempre pasa db_path como argumento con nombre
+    legacy_call = db_path is not None
+    
+    # Convertir parámetros posicionales a formato de filtros si es necesario
+    if legacy_call and not filtros:
+        filtros = {}
+        if fecha_desde_str:
+            filtros['fecha_desde'] = fecha_desde_str
+        if fecha_hasta_str:
+            filtros['fecha_hasta'] = fecha_hasta_str
+        if proveedor_term:
+            filtros['proveedor_term'] = proveedor_term
+    
+    conn = None
+    try:
+        # Usar db_path proporcionado o el de configuración
+        db_path_to_use = db_path or current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path_to_use)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        query = "SELECT * FROM pesajes_neto"
+        params = []
+        
+        # Aplicar filtros si se proporcionan
+        if filtros:
+            conditions = []
+            
+            # Filtro por códigos de guía (OPTIMIZACIÓN PRINCIPAL)
+            if 'codigos_guia' in filtros and filtros['codigos_guia']:
+                codigos_guia = filtros['codigos_guia']
+                if codigos_guia:  # Solo si la lista no está vacía
+                    placeholders = ', '.join('?' * len(codigos_guia))
+                    conditions.append(f"codigo_guia IN ({placeholders})")
+                    params.extend(codigos_guia)
+            
+            # Convertir fechas de filtro de Bogotá a UTC
+            if filtros.get('fecha_desde'):
+                try:
+                    fecha_desde_filter = filtros['fecha_desde'] # YYYY-MM-DD
+                    naive_dt_desde = datetime.strptime(fecha_desde_filter, '%Y-%m-%d')
+                    naive_dt_desde = datetime.combine(naive_dt_desde.date(), time.min)
+                    bogota_dt_desde = BOGOTA_TZ.localize(naive_dt_desde)
+                    utc_dt_desde = bogota_dt_desde.astimezone(UTC)
+                    utc_timestamp_desde = utc_dt_desde.strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    conditions.append("timestamp_pesaje_neto_utc >= ?")
+                    params.append(utc_timestamp_desde)
+                    logger.info(f"[Pesajes Neto] Filtro fecha_desde (Bogotá: {fecha_desde_filter} 00:00:00) -> UTC: {utc_timestamp_desde}")
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"[Pesajes Neto] Error procesando fecha_desde '{filtros.get('fecha_desde', 'N/A')}': {e}. Saltando filtro.")
+
+            if filtros.get('fecha_hasta'):
+                try:
+                    fecha_hasta_str = filtros['fecha_hasta'] # YYYY-MM-DD
+                    naive_dt_hasta = datetime.strptime(fecha_hasta_str, '%Y-%m-%d')
+                    naive_dt_hasta = datetime.combine(naive_dt_hasta.date(), time.max.replace(microsecond=0))
+                    bogota_dt_hasta = BOGOTA_TZ.localize(naive_dt_hasta)
+                    utc_dt_hasta = bogota_dt_hasta.astimezone(UTC)
+                    utc_timestamp_hasta = utc_dt_hasta.strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    conditions.append("timestamp_pesaje_neto_utc <= ?")
+                    params.append(utc_timestamp_hasta)
+                    logger.info(f"[Pesajes Neto] Filtro fecha_hasta (Bogotá: {fecha_hasta_str} 23:59:59) -> UTC: {utc_timestamp_hasta}")
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"[Pesajes Neto] Error procesando fecha_hasta '{filtros.get('fecha_hasta', 'N/A')}': {e}. Saltando filtro.")
+
+            # Otros filtros
+            proveedor_term_filter = filtros.get('proveedor_term')
+            if proveedor_term_filter:
+                # Asumiendo que las columnas codigo_proveedor y nombre_proveedor existen en la tabla pesajes_neto
+                # o que se hace un JOIN apropiado si vienen de otra tabla.
+                # Si no existen directamente, esta condición no funcionará como se espera.
+                # Esta lógica asume que la tabla pesajes_neto tiene estas columnas o se unen adecuadamente.
+                # Si 'nombre_proveedor' no está en 'pesajes_neto', necesitarás un JOIN con 'entry_records' o similar.
+                # Por ahora, se asume que existen o se unen.
+                # Si 'nombre_proveedor' no está directamente en la tabla 'pesajes_neto',
+                # esta parte del filtro necesitará un JOIN en la consulta principal.
+                # Por simplicidad, se añade la condición, pero puede requerir ajustar el SELECT y FROM.
+                # Ejemplo simplificado asumiendo que existen en la tabla:
+                conditions.append("(codigo_proveedor LIKE ? OR nombre_proveedor LIKE ?)")
+                params.extend([f"%{proveedor_term_filter}%", f"%{proveedor_term_filter}%"])
+                logger.info(f"[Pesajes Neto] Filtro por proveedor_term: '{proveedor_term_filter}'")
+            
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+                
+        # Ordenar por timestamp UTC más reciente en SQL
+        query += " ORDER BY timestamp_pesaje_neto_utc DESC"
+                
+        cursor.execute(query, params)
+        
+        pesajes_raw = []
+        for row in cursor.fetchall():
+            pesaje = {key: row[key] for key in row.keys()}
+            pesajes_raw.append(pesaje)
+        
+        # Enriquecer datos con información de placa y racimos desde entry_records
+        lista_final = []
+        totales = {'peso_neto_total': 0, 'peso_bruto_total': 0, 'cantidad_registros': 0}
+        
+        for p_neto in pesajes_raw:
+            codigo_guia = p_neto.get('codigo_guia')
+            if not codigo_guia:
+                logger.warning(f"Registro de pesaje neto sin código de guía: {p_neto}")
+                continue
+            
+            # Obtener datos adicionales de entry_records
+            entry_data = _get_entry_record_local(codigo_guia, db_path_to_use)
+            nombre_proveedor = entry_data.get('nombre_proveedor', "No disponible") if entry_data else "No disponible"
+            codigo_proveedor = entry_data.get('codigo_proveedor', p_neto.get('codigo_proveedor', "N/A")) if entry_data else p_neto.get('codigo_proveedor', "N/A")
+            placa = entry_data.get('placa', "N/A") if entry_data else "N/A"
+            cantidad_racimos = entry_data.get('cantidad_racimos', "N/A") if entry_data else "N/A"
+            
+            # Obtener peso bruto
+            datos_bruto = _get_pesaje_bruto_local(codigo_guia, db_path_to_use)
+            peso_bruto = datos_bruto.get('peso_bruto', "N/A") if datos_bruto else "N/A"
+            
+            # Convertir timestamp a fecha local
+            fecha_pesaje_neto_local, hora_pesaje_neto_local = "N/A", "N/A"
+            timestamp_utc_str = p_neto.get('timestamp_pesaje_neto_utc')
+            if timestamp_utc_str:
+                try:
+                    dt_utc_aware = UTC.localize(datetime.strptime(timestamp_utc_str, "%Y-%m-%d %H:%M:%S"))
+                    dt_bogota = dt_utc_aware.astimezone(BOGOTA_TZ)
+                    fecha_pesaje_neto_local = dt_bogota.strftime('%d/%m/%Y')
+                    hora_pesaje_neto_local = dt_bogota.strftime('%H:%M:%S')
+                except ValueError as e:
+                    logger.error(f"Error convirtiendo timestamp '{timestamp_utc_str}' para guía {codigo_guia}: {e}")
+            
+            # Crear registro enriquecido
+            registro_enriquecido = {
+                'codigo_guia': codigo_guia,
+                'placa': placa,
+                'codigo_proveedor': codigo_proveedor,
+                'nombre_proveedor': nombre_proveedor,
+                'cantidad_racimos': cantidad_racimos,
+                'fecha_pesaje_neto': fecha_pesaje_neto_local,
+                'hora_pesaje_neto': hora_pesaje_neto_local,
+                'peso_bruto': peso_bruto,
+                'peso_neto': p_neto.get('peso_neto', 0),
+                'peso_producto': p_neto.get('peso_producto', 0),
+                'tipo_pesaje_neto': p_neto.get('tipo_pesaje_neto', 'N/A'),
+                'timestamp_pesaje_neto_utc': timestamp_utc_str
+            }
+            
+            lista_final.append(registro_enriquecido)
+            
+            # Calcular totales
+            try:
+                peso_neto_num = float(p_neto.get('peso_neto', 0) or 0)
+                peso_bruto_num = float(peso_bruto) if peso_bruto != "N/A" else 0
+                totales['peso_neto_total'] += peso_neto_num
+                totales['peso_bruto_total'] += peso_bruto_num
+                totales['cantidad_registros'] += 1
+            except (ValueError, TypeError):
+                pass
+        
+        # Retornar formato apropiado según el tipo de llamada
+        if legacy_call:
+            return lista_final, totales
+        else:
+            return lista_final
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        if legacy_call:
+            return [], {'peso_neto_total': 0, 'peso_bruto_total': 0, 'cantidad_registros': 0}
+        return []
+    except sqlite3.Error as e:
+        logger.error(f"Recuperando registros de pesajes netos: {e}")
+        if legacy_call:
+            return [], {'peso_neto_total': 0, 'peso_bruto_total': 0, 'cantidad_registros': 0}
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+def _get_entry_record_local(codigo_guia, db_path):
+    """
+    Función local para obtener datos de entry_records sin depender del contexto de Flask
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM entry_records WHERE codigo_guia = ?", (codigo_guia,))
+        row = cursor.fetchone()
+        
+        if row:
+            return {key: row[key] for key in row.keys()}
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Error obteniendo entry_record para {codigo_guia}: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def _get_pesaje_bruto_local(codigo_guia, db_path):
+    """
+    Función local para obtener datos de pesaje bruto sin depender del contexto de Flask
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM pesajes_bruto WHERE codigo_guia = ?", (codigo_guia,))
+        row = cursor.fetchone()
+        
+        if row:
+            return {key: row[key] for key in row.keys()}
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Error obteniendo pesaje_bruto para {codigo_guia}: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_pesaje_neto_by_codigo_guia(codigo_guia):
+    """
+    Recupera un registro de pesaje neto específico por su código de guía.
+    Uses TIQUETES_DB_PATH.
+    
+    Args:
+        codigo_guia (str): El código de guía a buscar
+        
+    Returns:
+        dict: El registro de pesaje neto como diccionario, o None si no se encuentra
+    """
+    conn = None
+    try:
+        db_path = current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT * FROM pesajes_neto WHERE codigo_guia = ?", (codigo_guia,))
+        row = cursor.fetchone()
+        
+        if row:
+            pesaje = {key: row[key] for key in row.keys()}
+            return pesaje
+        return None
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Error recuperando registro de pesaje neto por código de guía: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_provider_by_code(codigo_proveedor, codigo_guia_actual=None):
+    """
+    Busca información de un proveedor por su código en las tablas disponibles.
+    Uses TIQUETES_DB_PATH.
+    
+    Args:
+        codigo_proveedor (str): Código del proveedor a buscar
+        codigo_guia_actual (str, optional): Código de guía actual para evitar mezclar datos de diferentes entregas
+        
+    Returns:
+        dict: Datos del proveedor o None si no se encuentra
+    """
+    conn = None
+    try:
+        db_path = current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Verificar si existe tabla de proveedores
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='proveedores'")
+        if cursor.fetchone():
+            cursor.execute("SELECT * FROM proveedores WHERE codigo = ?", (codigo_proveedor,))
+            row = cursor.fetchone()
+            if row: 
+                proveedor = {key: row[key] for key in row.keys()}
+                proveedor['es_dato_otra_entrega'] = False
+                logger.info(f"Proveedor encontrado en tabla proveedores: {codigo_proveedor}")
+                return proveedor
+        
+        if codigo_guia_actual:
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='entry_records'")
+            if cursor.fetchone():
+                cursor.execute("SELECT * FROM entry_records WHERE codigo_guia = ? LIMIT 1", (codigo_guia_actual,))
+                row = cursor.fetchone()
+                if row:
+                    proveedor = {key: row[key] for key in row.keys()}
+                    proveedor['codigo'] = proveedor.get('codigo_proveedor')
+                    proveedor['nombre'] = proveedor.get('nombre_proveedor')
+                    proveedor['es_dato_otra_entrega'] = False
+                    logger.info(f"Proveedor encontrado en entry_records para el mismo código de guía: {codigo_guia_actual}")
+                    return proveedor
+        
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='entry_records'")
+        if cursor.fetchone():
+            cursor.execute("SELECT * FROM entry_records WHERE codigo_proveedor = ? ORDER BY fecha_creacion DESC LIMIT 1", (codigo_proveedor,))
+            row = cursor.fetchone()
+            if row:
+                proveedor = {key: row[key] for key in row.keys()}
+                proveedor['codigo'] = proveedor.get('codigo_proveedor')
+                proveedor['nombre'] = proveedor.get('nombre_proveedor')
+                proveedor['timestamp_registro_utc'] = proveedor.get('timestamp_registro_utc', '')
+                proveedor['es_dato_otra_entrega'] = bool(codigo_guia_actual and proveedor.get('codigo_guia') != codigo_guia_actual)
+                if proveedor['es_dato_otra_entrega']:
+                    logger.warning(f"Proveedor encontrado en otra entrada (código guía: {proveedor.get('codigo_guia')})")
+                logger.info(f"Proveedor encontrado en entry_records: {codigo_proveedor}")
+                return proveedor
+            
+        tables_to_check = ['pesajes_bruto', 'clasificaciones', 'pesajes_neto']
+        for table in tables_to_check:
+            cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'")
+            if cursor.fetchone():
+                cursor.execute(f"PRAGMA table_info({table})")
+                columns = [row[1] for row in cursor.fetchall()]
+                if 'codigo_proveedor' in columns:
+                    if codigo_guia_actual and 'codigo_guia' in columns:
+                        query = f"SELECT * FROM {table} WHERE codigo_guia = ? LIMIT 1"
+                        cursor.execute(query, (codigo_guia_actual,))
+                        row = cursor.fetchone()
+                        if row and row['codigo_proveedor'] == codigo_proveedor:
+                            proveedor = {key: row[key] for key in row.keys()}
+                            proveedor['codigo'] = proveedor.get('codigo_proveedor')
+                            proveedor['nombre'] = proveedor.get('nombre_proveedor')
+                            proveedor['es_dato_otra_entrega'] = False
+                            logger.info(f"Proveedor encontrado en {table} para el mismo código de guía: {codigo_guia_actual}")
+                            return proveedor
+                    query = f"SELECT * FROM {table} WHERE codigo_proveedor = ? LIMIT 1"
+                    cursor.execute(query, (codigo_proveedor,))
+                    row = cursor.fetchone()
+                    if row:
+                        proveedor = {key: row[key] for key in row.keys()}
+                        proveedor['codigo'] = proveedor.get('codigo_proveedor')
+                        proveedor['nombre'] = proveedor.get('nombre_proveedor')
+                        proveedor['es_dato_otra_entrega'] = bool(codigo_guia_actual and 'codigo_guia' in columns and proveedor.get('codigo_guia') != codigo_guia_actual)
+                        if proveedor['es_dato_otra_entrega']:
+                            logger.warning(f"Datos encontrados en {table} de otra entrada (código guía: {proveedor.get('codigo_guia')})")
+                        logger.info(f"Proveedor encontrado en {table}: {codigo_proveedor}")
+                        return proveedor
+        
+        logger.warning(f"No se encontró información del proveedor: {codigo_proveedor}")
+        return None
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Error buscando proveedor por código: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+def get_entry_records_by_provider_code(codigo_proveedor):
+    conn = None
+    try:
+        # Get DB path from app config
+        db_path = current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        
+        # Verificar si existe la tabla
+        c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='entry_records'")
+        if not c.fetchone():
+            logger.warning(f"No existe la tabla entry_records para buscar registros del proveedor {codigo_proveedor}")
+            # Cerrar conexión si se abrió
+            if conn:
+                conn.close()
+            return []
+        
+        # Consultar registros - Sólo buscar por codigo_proveedor (el campo codigo no existe)
+        c.execute("""
+            SELECT * FROM entry_records 
+            WHERE codigo_proveedor = ?
+            ORDER BY fecha_creacion DESC, id DESC
+        """, (codigo_proveedor,))
+        
+        records = []
+        for row in c.fetchall():
+            record = {}
+            for key in row.keys():
+                record[key] = row[key]
+            # Ensure the timestamp field is included
+            record['timestamp_registro_utc'] = record.get('timestamp_registro_utc', '') 
+            records.append(record)
+        
+        # Cerrar conexión antes de retornar
+        if conn:
+             conn.close()
+        logger.info(f"Encontrados {len(records)} registros para el proveedor {codigo_proveedor}")
+        return records
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        if conn: # Asegurar cierre en caso de error
+            conn.close()
+        return []
+    except Exception as e:
+        logger.error(f"Error al obtener registros para el proveedor {codigo_proveedor}: {str(e)}")
+        # logger.error(traceback.format_exc()) # Comentado para reducir verbosidad, descomentar si es necesario
+        if conn:
+             conn.close()
+        return []
+    finally:
+        # Asegurar cierre final si aún está abierta (por si acaso)
+        if conn:
+            conn.close()
+
+#-----------------------
+# Operaciones para Salidas
+#-----------------------
+
+def store_salida(salida_data):
+    """
+    Almacena un registro de salida en la base de datos.
+    Uses TIQUETES_DB_PATH.
+    
+    Args:
+        salida_data (dict): Diccionario con los datos de la salida
+        
+    Returns:
+        bool: True si se almacenó correctamente, False en caso contrario
+    """
+    conn = None
+    try:
+        db_path = current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Verificar si ya existe un registro con este código_guia
+        cursor.execute("SELECT id FROM salidas WHERE codigo_guia = ?", 
+                      (salida_data.get('codigo_guia'),))
+        existing = cursor.fetchone()
+        
+        # Preparar datos excluyendo claves None y la clave primaria para INSERT/UPDATE
+        datos_filtrados = {k: v for k, v in salida_data.items() if v is not None and k != 'id'}
+        datos_finales = datos_filtrados # En este caso no hay timestamps complejos que manejar
+
+        if existing:
+            # Actualizar el registro existente
+            update_cols = []
+            params = []
+            
+            for key, value in datos_finales.items():
+                if key != 'codigo_guia':  # Excluir la clave primaria
+                    update_cols.append(f"{key} = ?")
+                    params.append(value)
+            
+            # Agregar el parámetro para WHERE
+            params.append(datos_finales.get('codigo_guia'))
+            
+            update_query = f"UPDATE salidas SET {', '.join(update_cols)} WHERE codigo_guia = ?"
+            cursor.execute(update_query, params)
+            logger.info(f"Actualizado registro de salida para guía: {datos_finales.get('codigo_guia')}")
+        else:
+            # Insertar nuevo registro
+            columns = ', '.join(datos_finales.keys())
+            placeholders = ', '.join(['?' for _ in datos_finales])
+            values = list(datos_finales.values())
+            
+            insert_query = f"INSERT INTO salidas ({columns}) VALUES ({placeholders})"
+            cursor.execute(insert_query, values)
+            logger.info(f"Insertado nuevo registro de salida para guía: {datos_finales.get('codigo_guia')}")
+        
+        conn.commit()
+        return True
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        return False
+    except sqlite3.Error as e:
+        logger.error(f"Error almacenando registro de salida: {e}")
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+def get_salidas(filtros=None):
+    """
+    Recupera los registros de salidas, opcionalmente filtrados.
+    Uses TIQUETES_DB_PATH.
+    
+    Args:
+        filtros (dict, optional): Diccionario con condiciones de filtro
+        
+    Returns:
+        list: Lista de registros de salidas como diccionarios
+    """
+    conn = None
+    try:
+        db_path = current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Verificar que la tabla existe
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='salidas'")
+        if not cursor.fetchone():
+            logger.warning("La tabla 'salidas' no existe en la base de datos.")
+            return []
+        
+        query = "SELECT * FROM salidas"
+        params = []
+        
+        # Aplicar filtros si se proporcionan
+        if filtros:
+            conditions = []
+            
+            # Filtro por códigos de guía (OPTIMIZACIÓN PRINCIPAL)
+            if 'codigos_guia' in filtros and filtros['codigos_guia']:
+                codigos_guia = filtros['codigos_guia']
+                if codigos_guia:  # Solo si la lista no está vacía
+                    placeholders = ', '.join('?' * len(codigos_guia))
+                    conditions.append(f"codigo_guia IN ({placeholders})")
+                    params.extend(codigos_guia)
+            
+            # Filtro por fecha (usando timestamp_salida_utc)
+            if filtros.get('fecha_desde'):
+                try:
+                    fecha_desde_str = filtros['fecha_desde'] # YYYY-MM-DD
+                    naive_dt_desde = datetime.strptime(fecha_desde_str, '%Y-%m-%d')
+                    naive_dt_desde = datetime.combine(naive_dt_desde.date(), time.min)
+                    bogota_dt_desde = BOGOTA_TZ.localize(naive_dt_desde)
+                    utc_dt_desde = bogota_dt_desde.astimezone(UTC)
+                    utc_timestamp_desde = utc_dt_desde.strftime('%Y-%m-%d %H:%M:%S')
+                    conditions.append("timestamp_salida_utc >= ?")
+                    params.append(utc_timestamp_desde)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"[Salidas] Error procesando fecha_desde '{filtros.get('fecha_desde', 'N/A')}': {e}.")
+
+            if filtros.get('fecha_hasta'):
+                try:
+                    fecha_hasta_str = filtros['fecha_hasta'] # YYYY-MM-DD
+                    naive_dt_hasta = datetime.strptime(fecha_hasta_str, '%Y-%m-%d')
+                    naive_dt_hasta = datetime.combine(naive_dt_hasta.date(), time.max.replace(microsecond=0))
+                    bogota_dt_hasta = BOGOTA_TZ.localize(naive_dt_hasta)
+                    utc_dt_hasta = bogota_dt_hasta.astimezone(UTC)
+                    utc_timestamp_hasta = utc_dt_hasta.strftime('%Y-%m-%d %H:%M:%S')
+                    conditions.append("timestamp_salida_utc <= ?")
+                    params.append(utc_timestamp_hasta)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"[Salidas] Error procesando fecha_hasta '{filtros.get('fecha_hasta', 'N/A')}': {e}.")
+
+            # Otros filtros
+            if filtros.get('codigo_guia'):
+                conditions.append("codigo_guia LIKE ?")
+                params.append(f"%{filtros['codigo_guia']}%")
+            if filtros.get('codigo_proveedor'):
+                conditions.append("codigo_proveedor LIKE ?")
+                params.append(f"%{filtros['codigo_proveedor']}%")
+            if filtros.get('nombre_proveedor'):
+                conditions.append("nombre_proveedor LIKE ?")
+                params.append(f"%{filtros['nombre_proveedor']}%")
+            if filtros.get('estado'):
+                 conditions.append("estado LIKE ?")
+                 params.append(f"%{filtros['estado']}%")
+            
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+                
+        # Ordenar por timestamp UTC más reciente
+        query += " ORDER BY timestamp_salida_utc DESC"
+                
+        cursor.execute(query, params)
+        
+        salidas = []
+        for row in cursor.fetchall():
+            salida = {key: row[key] for key in row.keys()}
+            salidas.append(salida)
+        
+        return salidas
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        return []
+    except sqlite3.Error as e:
+        logger.error(f"Recuperando registros de salidas: {e}")
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_salida_by_codigo_guia(codigo_guia):
+    """
+    Recupera un registro de salida específico por su código de guía.
+    Uses TIQUETES_DB_PATH.
+    
+    Args:
+        codigo_guia (str): El código de guía a buscar
+        
+    Returns:
+        dict: El registro de salida como diccionario, o None si no se encuentra
+    """
+    conn = None
+    try:
+        db_path = current_app.config['TIQUETES_DB_PATH']
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Verificar que la tabla existe
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='salidas'")
+        if not cursor.fetchone():
+            logger.warning("La tabla 'salidas' no existe al buscar por código de guía.")
+            return None
+        
+        cursor.execute("SELECT * FROM salidas WHERE codigo_guia = ?", (codigo_guia,))
+        row = cursor.fetchone()
+        
+        if row:
+            salida = {key: row[key] for key in row.keys()}
+            return salida
+        return None
+    except KeyError:
+        logger.error("Error: 'TIQUETES_DB_PATH' no está configurada en la aplicación Flask.")
+        return None
+    except sqlite3.Error as e:
+        logger.error(f"Error recuperando registro de salida por código de guía: {e}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+# --- Nueva Función para Validaciones Diarias SAP ---
+def guardar_actualizar_validacion_sap(fecha_aplicable_validacion, timestamp_creacion_utc, 
+                                    peso_neto_total_validado, mensaje_webhook, 
+                                    exito_webhook, ruta_foto_validacion, 
+                                    filtros_aplicados_json, db_path=None):
+    """
+    Guarda o actualiza un registro de validación diaria SAP en la base de datos.
+    Usa fecha_aplicable_validacion como clave para determinar si insertar o actualizar.
+
+    Args:
+        fecha_aplicable_validacion (str): Fecha de la validación (YYYY-MM-DD).
+        timestamp_creacion_utc (str): Timestamp UTC de cuándo se creó/actualizó la validación.
+        peso_neto_total_validado (float): El peso neto total que se validó.
+        mensaje_webhook (str): El mensaje recibido del webhook.
+        exito_webhook (bool): True si la validación fue exitosa, False si no.
+        ruta_foto_validacion (str): Ruta relativa a la foto de validación guardada.
+        filtros_aplicados_json (str): String JSON de los filtros que estaban aplicados.
+        db_path (str, optional): Ruta a la base de datos. Si es None, usa current_app.config.
+
+    Returns:
+        bool: True si la operación fue exitosa, False en caso contrario.
+    """
+    conn = None
+    if db_path is None:
+        try:
+            db_path = current_app.config['TIQUETES_DB_PATH']
+        except RuntimeError: # Fuera del contexto de la aplicación
+            logger.error("guardar_actualizar_validacion_sap: No se pudo obtener db_path del contexto de la app y no se proporcionó.")
+            return False
+        except KeyError:
+            logger.error("guardar_actualizar_validacion_sap: 'TIQUETES_DB_PATH' no configurado en la app.")
+            return False
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # Verificar si ya existe un registro para esta fecha_aplicable_validacion
+        cursor.execute("SELECT id FROM validaciones_diarias_sap WHERE fecha_aplicable_validacion = ?", 
+                       (fecha_aplicable_validacion,))
+        existing_record = cursor.fetchone()
+
+        params = {
+            "fecha_aplicable_validacion": fecha_aplicable_validacion,
+            "timestamp_creacion_utc": timestamp_creacion_utc,
+            "peso_neto_total_validado": peso_neto_total_validado,
+            "mensaje_webhook": mensaje_webhook,
+            "exito_webhook": 1 if exito_webhook else 0,
+            "ruta_foto_validacion": ruta_foto_validacion,
+            "filtros_aplicados_json": filtros_aplicados_json
+        }
+
+        if existing_record:
+            # Actualizar el registro existente
+            # No actualizamos fecha_validacion (es la clave) ni fecha_creacion original del registro de DB
+            update_query = """
+                UPDATE validaciones_diarias_sap 
+                SET timestamp_creacion_utc = :timestamp_creacion_utc,
+                    peso_neto_total_validado = :peso_neto_total_validado,
+                    mensaje_webhook = :mensaje_webhook,
+                    exito_webhook = :exito_webhook,
+                    ruta_foto_validacion = :ruta_foto_validacion,
+                    filtros_aplicados_json = :filtros_aplicados_json
+                WHERE fecha_aplicable_validacion = :fecha_aplicable_validacion
+            """
+            cursor.execute(update_query, params)
+            logger.info(f"Validación SAP actualizada para fecha: {fecha_aplicable_validacion}")
+        else:
+            # Insertar nuevo registro (incluyendo fecha_validacion)
+            # SQLite asignará CURRENT_TIMESTAMP a fecha_creacion automáticamente si la columna tiene ese DEFAULT
+            insert_query = """
+                INSERT INTO validaciones_diarias_sap (
+                    fecha_aplicable_validacion, timestamp_creacion_utc, peso_neto_total_validado, 
+                    mensaje_webhook, exito_webhook, ruta_foto_validacion, filtros_aplicados_json
+                ) VALUES (
+                    :fecha_aplicable_validacion, :timestamp_creacion_utc, :peso_neto_total_validado, 
+                    :mensaje_webhook, :exito_webhook, :ruta_foto_validacion, :filtros_aplicados_json
+                )
+            """
+            cursor.execute(insert_query, params)
+            logger.info(f"Nueva validación SAP guardada para fecha: {fecha_aplicable_validacion}")
+        
+        conn.commit()
+        return True
+
+    except sqlite3.Error as e:
+        logger.error(f"Error de base de datos en guardar_actualizar_validacion_sap para fecha {fecha_aplicable_validacion}: {e}")
+        if conn:
+            conn.rollback()
+        return False
+    except Exception as e_general:
+        logger.error(f"Error general en guardar_actualizar_validacion_sap para fecha {fecha_aplicable_validacion}: {e_general}")
+        if conn:
+            conn.rollback() # Asegurar rollback en caso de error no SQLite
+        return False
+    finally:
+        if conn:
+            conn.close()
+
+# --- Fin Nueva Función --- 
+
+def get_validacion_diaria_sap(fecha_validacion, db_path=None):
+    """
+    Recupera un registro de validación diaria SAP por su fecha.
+
+    Args:
+        fecha_validacion (str): Fecha de la validación a buscar (YYYY-MM-DD).
+        db_path (str, optional): Ruta a la base de datos. Si es None, usa current_app.config.
+
+    Returns:
+        dict: Datos de la validación como diccionario, o None si no se encuentra.
+    """
+    conn = None
+    if db_path is None:
+        try:
+            db_path = current_app.config['TIQUETES_DB_PATH']
+        except RuntimeError:
+            logger.error("get_validacion_diaria_sap: No se pudo obtener db_path del contexto.")
+            return None
+        except KeyError:
+            logger.error("get_validacion_diaria_sap: 'TIQUETES_DB_PATH' no configurado.")
+            return None
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row # Para acceder a las columnas por nombre
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT * FROM validaciones_diarias_sap WHERE fecha_aplicable_validacion = ?", 
+                       (fecha_validacion,))
+        row = cursor.fetchone()
+
+        if row:
+            # Convertir la fila a un diccionario
+            validacion = {key: row[key] for key in row.keys()}
+            # Convertir exito_webhook (INTEGER) a Boolean
+            if 'exito_webhook' in validacion and validacion['exito_webhook'] is not None:
+                validacion['exito_webhook'] = bool(validacion['exito_webhook'])
+            return validacion
+        else:
+            return None
+
+    except sqlite3.Error as e:
+        logger.error(f"Error de BD en get_validacion_diaria_sap para fecha {fecha_validacion}: {e}")
+        return None
+    except Exception as e_general:
+        logger.error(f"Error general en get_validacion_diaria_sap para fecha {fecha_validacion}: {e_general}")
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+# --- Nueva Función para obtener un resumen de validaciones diarias --- 
+def get_resumen_validaciones_diarias(rango_dias=60, db_path=None):
+    """
+    Recupera un resumen de las validaciones diarias SAP de los últimos 'rango_dias'.
+
+    Args:
+        rango_dias (int): Número de días hacia atrás para obtener el resumen.
+        db_path (str, optional): Ruta a la base de datos. Si es None, usa current_app.config.
+
+    Returns:
+        list: Lista de diccionarios, cada uno representando una validación.
+              Ej: [{'fecha_validacion': 'YYYY-MM-DD', 'exito_webhook': True, 
+                    'mensaje_webhook': '...', 'ruta_foto_validacion': '...'}]
+              Retorna lista vacía en caso de error o si no hay datos.
+    """
+    logger.info(f"[GET_RESUMEN_VALIDACIONES] === Iniciando ejecución. Rango de días: {rango_dias}. DB Path inicial: {db_path} ===")
+    conn = None
+    if db_path is None:
+        try:
+            db_path = current_app.config['TIQUETES_DB_PATH']
+            logger.info(f"[GET_RESUMEN_VALIDACIONES] Usando db_path de current_app.config: {db_path}")
+        except RuntimeError: # Fuera de contexto de aplicación
+            logger.error("[GET_RESUMEN_VALIDACIONES] Error: No se pudo obtener db_path del contexto de la aplicación (RuntimeError).")
+            logger.info("[GET_RESUMEN_VALIDACIONES] Retornando lista vacía por RuntimeError.")
+            return [] 
+        except KeyError: # TIQUETES_DB_PATH no está en config
+            logger.error("[GET_RESUMEN_VALIDACIONES] Error: 'TIQUETES_DB_PATH' no está configurada en current_app.config (KeyError).")
+            logger.info("[GET_RESUMEN_VALIDACIONES] Retornando lista vacía por KeyError.")
+            return []
+        except Exception as e_cfg: # Otra excepción obteniendo config
+            logger.error(f"[GET_RESUMEN_VALIDACIONES] Error inesperado obteniendo db_path de current_app.config: {e_cfg}")
+            logger.info("[GET_RESUMEN_VALIDACIONES] Retornando lista vacía por error de configuración inesperado.")
+            return []
+    else:
+        logger.info(f"[GET_RESUMEN_VALIDACIONES] Usando db_path proporcionado directamente: {db_path}")
+
+    try:
+        logger.info(f"[GET_RESUMEN_VALIDACIONES] Intentando conectar a la base de datos: {db_path}")
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        logger.info(f"[GET_RESUMEN_VALIDACIONES] Conexión a DB establecida. Preparando para calcular rango de fechas.")
+
+        hoy_bogota = datetime.now(BOGOTA_TZ).date()
+        fecha_inicio_rango = (hoy_bogota - timedelta(days=rango_dias)).strftime('%Y-%m-%d')
+        logger.info(f"[GET_RESUMEN_VALIDACIONES] Calculando resumen para los últimos {rango_dias} días. Fecha de inicio del rango (YYYY-MM-DD): {fecha_inicio_rango}")
+
+        query = """
+            SELECT fecha_aplicable_validacion, exito_webhook, mensaje_webhook, ruta_foto_validacion, timestamp_creacion_utc
+            FROM validaciones_diarias_sap 
+            WHERE fecha_aplicable_validacion >= ? 
+            ORDER BY fecha_aplicable_validacion DESC
+        """
+        logger.info(f"[GET_RESUMEN_VALIDACIONES] Ejecutando query: {query} con fecha_inicio_rango: {fecha_inicio_rango}")
+        cursor.execute(query, (fecha_inicio_rango,))
+        rows = cursor.fetchall()
+        logger.info(f"[GET_RESUMEN_VALIDACIONES] Consulta ejecutada. Número de filas encontradas: {len(rows)}")
+
+        resumen_validaciones = []
+        if not rows:
+            logger.info("[GET_RESUMEN_VALIDACIONES] No se encontraron filas, retornando lista vacía.")
+            return []
+
+        for i, row_data in enumerate(rows):
+            try:
+                validacion_dict = dict(row_data) # Convertir sqlite3.Row a dict
+                
+                # Asegurar que todas las claves esperadas estén presentes, incluso si son None
+                validacion_dict.setdefault('fecha_aplicable_validacion', None)
+                validacion_dict.setdefault('exito_webhook', None)
+                validacion_dict.setdefault('mensaje_webhook', None)
+                validacion_dict.setdefault('ruta_foto_validacion', None)
+                validacion_dict.setdefault('timestamp_creacion_utc', None)
+                
+                # Agregar alias para compatibilidad con código existente
+                validacion_dict['fecha_validacion'] = validacion_dict.get('fecha_aplicable_validacion')
+
+                resumen_validaciones.append(validacion_dict)
+            except Exception as e_row:
+                logger.error(f"[GET_RESUMEN_VALIDACIONES] Error procesando fila {i}: {e_row}. Fila: {row_data}")
+        
+        logger.info(f"[GET_RESUMEN_VALIDACIONES] Procesadas {len(resumen_validaciones)} validaciones. Retornando resumen.")
+        return resumen_validaciones
+    
+    except sqlite3.Error as e:
+        logger.error(f"[GET_RESUMEN_VALIDACIONES] Error SQLite: {e}")
+        logger.error(traceback.format_exc())
+        logger.info("[GET_RESUMEN_VALIDACIONES] Retornando lista vacía debido a error SQLite.")
+        return []
+    except Exception as e:
+        logger.error(f"[GET_RESUMEN_VALIDACIONES] Error general en get_resumen_validaciones_diarias: {e}")
+        logger.error(traceback.format_exc())
+        logger.info("[GET_RESUMEN_VALIDACIONES] Retornando lista vacía debido a error general.")
+        return []
+    finally:
+        if conn:
+            conn.close()
+            logger.info("[GET_RESUMEN_VALIDACIONES] Conexión DB cerrada.")
+        logger.info("[GET_RESUMEN_VALIDACIONES] === Finalizando ejecución ===")
+
+# --- Fin Nueva Función ---
